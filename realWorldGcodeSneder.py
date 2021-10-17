@@ -4,7 +4,7 @@ import argparse
 import cv2
 import time
 
-cap = cv2.VideoCapture(0) # Set Capture Device, in case of a USB Webcam try 1, or give -1 to get a list of available devices
+cap = cv2.VideoCapture(1, cv2.CAP_DSHOW) # Set Capture Device, in case of a USB Webcam try 1, or give -1 to get a list of available devices
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
@@ -22,29 +22,35 @@ while(True):
   # load the image, clone it for output, and then convert it to grayscale
       
   output = frame.copy()
+  
+  mask = cv2.inRange(frame, (150, 150, 150), (255, 255, 255))
+  frame = cv2.bitwise_and(frame, frame, mask=mask)
   gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
   
   # apply GuassianBlur to reduce noise. medianBlur is also added for smoothening, reducing noise.
-  gray = cv2.GaussianBlur(gray,(5,5),0);
-  #gray = cv2.medianBlur(gray,5)
+  gray = cv2.GaussianBlur(gray,(7,7),0);
+  gray = cv2.medianBlur(gray,7)
   
-  # Adaptive Guassian Threshold is to detect sharp edges in the Image. For more information Google it.
+  #Adaptive Guassian Threshold is to detect sharp edges in the Image. For more information Google it.
   gray = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-            cv2.THRESH_BINARY,9,13.5)
+            cv2.THRESH_BINARY,9,20.5)
   
-  kernel = np.ones((1,1),np.uint8)
-  #gray = cv2.erode(gray,kernel,iterations = 1)
-  #gray = cv2.dilate(gray,kernel,iterations = 1)
+  kernel = np.ones((5,5),np.uint8)
+  gray = cv2.erode(gray,kernel,iterations = 1)
+  gray = cv2.dilate(gray,kernel,iterations = 1)
 
-  # get the size of the final image
-  img_size = gray.shape
-  print( img_size)
+  #contours, hier = cv2.findContours(gray,cv2.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
+  #for cnt in contours:
+  #  if 200<cv2.contourArea(cnt)<5000:
+  #      cv2.drawContours(output,[cnt],0,(255,0,0),2)
+  #      cv2.drawContours(mask,[cnt],0,255,-1)
+
   
   # detect circles in the image
-  circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 1550, \
+  circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 550, \
                              param1=100,                       \
                              param2=15,                        \
-                             minRadius=5, maxRadius=20)
+                             minRadius=5, maxRadius=15)
   # print circles
   
   # ensure at least some circles were found
@@ -56,8 +62,8 @@ while(True):
     for (x, y, r) in circles:
       # draw the circle in the output image, then draw a rectangle in the image
       # corresponding to the center of the circle
-      cv2.circle(output, (x, y), r, (0, 255, 0), 4)
-      cv2.rectangle(output, (x - 5, y - 5), (x + 5, y + 5), (0, 128, 255), -1)
+      cv2.circle(output, (x, y), r, (0, 255, 0), 1)
+      cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
       #time.sleep(0.5)
       #print( "Column Number: ")
       #print( x)
