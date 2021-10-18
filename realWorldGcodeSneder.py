@@ -4,9 +4,138 @@ import argparse
 import cv2
 import time
 import math
+from svgpathtools import Path, Line, QuadraticBezier, CubicBezier, Arc
+from svgpathtools import svg2paths, wsvg, svg2paths2, polyline
+from matplotlib import pyplot as plt
+from matplotlib.widgets import TextBox
+
+global xOffset
+global yOffset
+global rotation
+
+####################################################################################
+# SHould put these in a shared libary
+####################################################################################
+def distanceXY(p1, p2):
+  return ((p1.X - p2.X)**2 + (p1.Y - p2.Y)**2)**0.5
+
+class Point3D:
+  def __init__(self, X, Y, Z = None):
+    self.X = X
+    self.Y = Y
+    self.Z = Z
+  def to2DComplex(self):
+    return self.X + self.Y * 1j
+  def distanceXY(self, point):
+    return distanceXY(self, point)
+  def __str__(self):
+    return str("(" + str(self.X) + "," + str(self.Y) + "," + str(self.Z) + ")")
+  def __repr__(self):
+    return str("(" + str(self.X) + "," + str(self.Y) + "," + str(self.Z) + ")")
+
+def lineOrCurveToPoints3D(lineOrCurve, pointsPerCurve):
+  if isinstance(lineOrCurve,Line):
+    #print(lineOrCurve)
+    return [Point3D(lineOrCurve.bpoints()[0].real, lineOrCurve.bpoints()[0].imag), \
+            Point3D(lineOrCurve.bpoints()[1].real, lineOrCurve.bpoints()[1].imag)]
+  elif isinstance(lineOrCurve, CubicBezier):
+    points3D = []
+    for i in range(int(pointsPerCurve)):
+      complexPoint = lineOrCurve.point(i / (pointsPerCurve - 1.0))
+      points3D.append(Point3D(complexPoint.real, complexPoint.imag, None))
+    return points3D
+  elif isinstance(lineOrCurve, Arc):
+    points3D = []
+    for i in range(int(pointsPerCurve) * 10):
+      complexPoint = lineOrCurve.point(i / (pointsPerCurve * 10 - 1.0))
+      points3D.append(Point3D(complexPoint.real, complexPoint.imag, None))
+    return points3D
+
+  else:
+    print("unsuported type: " + str(lineOrCurve))
+    quit()
+
+def pathToPoints3D(path, pointsPerCurve):
+  prevEnd = None
+  points3D = []
+  for lineOrCurve in path:
+    curPoints3D = lineOrCurveToPoints3D(lineOrCurve, pointsPerCurve)
+    #check that the last line ending starts the beginning of the next line.
+    #print(curPoints3D)
+    if prevEnd != None and distanceXY(curPoints3D[0], prevEnd) > 0.01:
+      print(curPoints3D[0])
+      print(prevEnd)
+      print("A SVG path must be contiguous, one line ending and beginning on the next line.  Make a seperate path out of non contiguous lines")
+      quit()
+    elif prevEnd == None:
+      #first line, store both beginning point and end point
+      points3D.extend(curPoints3D)
+    else:
+      #add to point list except first one as it was verified to be same as ending of last
+      points3D.extend(curPoints3D[1:])
+    prevEnd = curPoints3D[-1]
+  return points3D
+####################################################################################
 
 def dist(p1, p2):
   return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+
+def scalePoints(points, scale):
+  for point in points:
+    point.X = point.X * scale
+    point.Y = point.Y * scale
+    if point.Z != None:
+      point.Z = point.Z * scale
+
+def overlaySvg(image, origin, xVector, yVector):
+  overlay = image.copy()
+  # 889mm between the dots, calculate number of pixels per mm
+  xLineEnd = origin + xVector
+  yLineEnd = origin + yVector
+  cv2.line(overlay, origin.astype(np.int), xLineEnd.astype(np.int), (0, 0, 255), 3)
+  cv2.line(overlay, origin.astype(np.int), yLineEnd.astype(np.int), (0, 255, 0), 3)
+  xPixelPerMm = dist((0, 0), xVector) / 889
+  yPixelPerMm = dist((0, 0), yVector) / 889
+  pixelsPerInch = (xPixelPerMm + yPixelPerMm) / 2.0 * 25.4
+  print(xPixelPerMm)
+  print(yPixelPerMm)
+
+  xVectorNorm = [x / dist((0, 0), xVector) for x in xVector]
+  yVectorNorm = [y / dist((0, 0), yVector) for y in yVector]
+
+  paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+  #paths, attributes, svg_attributes = svg2paths2("test.svg")
+  
+  for path in paths:
+    points = pathToPoints3D(path, 10)
+    scalePoints(points, xPixelPerMm)
+    prevPoint = None
+    for point in points:
+      newPoint = origin + \
+                 np.matmul([point.X, point.Y], [[xVectorNorm[0], yVectorNorm[0]], \
+                                                [xVectorNorm[1], yVectorNorm[1]]])
+      newPoint = origin + \
+                 np.matmul([point.X, point.Y], [[xVectorNorm[0], xVectorNorm[1]], \
+                                                [yVectorNorm[0], yVectorNorm[1]]])
+      #print(newPoint)
+      if prevPoint is not None:
+        cv2.line(overlay, prevPoint.astype(np.int), newPoint.astype(np.int), (255, 0, 0), int(pixelsPerInch * 0.25))
+      prevPoint = newPoint
+  return overlay
+      
+
+def updateXOffset(text):
+  xOffset = float(text)
+  
+def updateYOffset(text):
+  yOffset = float(text)
+
+def updateRotation(text):
+  rotation = float(rotation)
+
+#############################################################################
+# Main
+#############################################################################
 
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW) # Set Capture Device, in case of a USB Webcam try 1, or give -1 to get a list of available devices
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -19,7 +148,9 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 # The above step is to set the Resolution of the Video. The default is 640x480.
 # This example works with a Resolution of 640x480.
 
-while(True):
+#Wait until 3 circles are found (contour for circle, contour for mask around circle)
+contours = []
+while len(contours) != 6:
   # Capture frame-by-frame
   ret, frame = cap.read()
 
@@ -111,96 +242,76 @@ while(True):
     #print("Contours found: " + str(len(contours)))
 
      
-    #######################################################################
-    # Find center of inside countour
-    #######################################################################
-    if len(contours) == 6:
-      avgArea = 0
-      for contour in contours:
-        avgArea = avgArea + cv2.contourArea(contour)
-      avgArea = avgArea / len(contours)
+#######################################################################
+# Find center of inside countour
+#######################################################################
+avgArea = 0
+for contour in contours:
+  avgArea = avgArea + cv2.contourArea(contour)
+avgArea = avgArea / len(contours)
 
-      insideContours = []
-      centers = []
-      for contour in contours:
-        area = cv2.contourArea(contour)
-        if area < avgArea:
-          insideContours.append(contour)
-          M = cv2.moments(contour)
-          centers.append((M["m10"] / M["m00"], M["m01"] / M["m00"]))
-          x = int(centers[-1][0])
-          y = int(centers[-1][1])
-          cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
+insideContours = []
+centers = []
+for contour in contours:
+  area = cv2.contourArea(contour)
+  if area < avgArea:
+    insideContours.append(contour)
+    M = cv2.moments(contour)
+    centers.append((M["m10"] / M["m00"], M["m01"] / M["m00"]))
+    x = int(centers[-1][0])
+    y = int(centers[-1][1])
+    cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
 
-      cv2.drawContours(output, insideContours, -1, (0,255,0), 3)
-      #print(centers)
+cv2.drawContours(output, insideContours, -1, (0,255,0), 3)
+#print(centers)
 
-      distToOthers = []
-      distToOthers.append(dist(centers[0], centers[1]) + dist(centers[0], centers[2]))
-      distToOthers.append(dist(centers[1], centers[0]) + dist(centers[1], centers[2]))
-      distToOthers.append(dist(centers[2], centers[0]) + dist(centers[2], centers[1]))
+distToOthers = []
+distToOthers.append(dist(centers[0], centers[1]) + dist(centers[0], centers[2]))
+distToOthers.append(dist(centers[1], centers[0]) + dist(centers[1], centers[2]))
+distToOthers.append(dist(centers[2], centers[0]) + dist(centers[2], centers[1]))
 
-      # sort centers by dist to others, such that shortest distance is first (start of vector)
-      centers = [x for _, x in sorted(zip(distToOthers, centers))]
-      #centers = [(100,0), (100, 100), (0,0)]
-      #centers = [(100,0), (0, 0), (100,100)]
-      #print(centers)
-      #assume x and y vector
-      origin = centers[0]
-      xVector = [centers[1][0] - centers[0][0], centers[1][1] - centers[0][1]]
-      yVector = [centers[2][0] - centers[0][0], centers[2][1] - centers[0][1]]
-      angle = math.atan2(xVector[0] * yVector[1] - xVector[1]*yVector[0], xVector[0]*yVector[0] + xVector[1]*yVector[1]) * 360 / 3.14159 / 2.0
+# sort centers by dist to others, such that shortest distance is first (start of vector)
+centers = [x for _, x in sorted(zip(distToOthers, centers))]
+#centers = [(100,0), (100, 100), (0,0)]
+#centers = [(100,0), (0, 0), (100,100)]
+#print(centers)
+#assume x and y vector
+origin = np.array(centers[0])
+xVector = np.array([centers[1][0] - centers[0][0], centers[1][1] - centers[0][1]])
+yVector = np.array([centers[2][0] - centers[0][0], centers[2][1] - centers[0][1]])
+angle = math.atan2(xVector[0] * yVector[1] - xVector[1]*yVector[0], xVector[0]*yVector[0] + xVector[1]*yVector[1]) * 360 / 3.14159 / 2.0
 
-      # Make it so centers are ordered, origin, xAxis, yAxis
-      if angle < 0:
-        temp = xVector
-        xVector = yVector
-        yVector = temp
-      
-      print("origin: " + str(origin))
-      print("xVector: " + str(xVector))
-      print("yVector: " + str(yVector))
+# Make it so centers are ordered, origin, xAxis, yAxis
+if angle < 0:
+  temp = xVector
+  xVector = yVector
+  yVector = temp
+  
+print("origin: " + str(origin))
+print("xVector: " + str(xVector))
+print("yVector: " + str(yVector))
+
+overlay = overlaySvg(output, origin, xVector, yVector)
 
 
-    #cv2.imshow('blackWhite',blackWhite)
+fig, ax = plt.subplots()
+fig.tight_layout()
+plt.subplots_adjust(bottom=0.2)
+plt.axis([1280,0, 0, 800])
+plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+xAxes = plt.axes([0.2, 0.1, 0.2, 0.04])
+xBox = TextBox(xAxes, "xOffset (in)", initial="0")
+xBox.on_submit(updateXOffset)
 
-    #######################################################################
-    # Record reference circle locations if 3 reference circles found
-    # Should only be 3
-    #######################################################################
-    #masks = []
-    #if len(referenceCircles) == 3:
-    #  # Find contours of black and white image
-    #  im2, contours, hierarchy = cv2.findContours(blackWhite,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-    #  centers = []
-    #  for c in contours:
-    #    M = cv2.moments(c)
-    #    # calculate x,y coordinate of center
-    #    cX = int(M["m10"] / M["m00"])
-    #    cY = int(M["m01"] / M["m00"])
-    #    centers.append((cX, cY))
-        
+yAxes = plt.axes([0.7, 0.1, 0.2, 0.04])
+yBox = TextBox(yAxes, "yOffset (in)", initial="0")
+yBox.on_submit(updateYOffset)
 
-    #  centersWithinCircles = []
+rAxes = plt.axes([0.2, 0.01, 0.2, 0.04])
+rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
+rBox.on_submit(updateRotation)
 
-    #  for (x, y, r) in referenceCircles:
-    #    masks.append(np.zeros((output.shape[0], output.shape[1]), np.uint8))
-    #    cv2.circle(masks[-1], (x, y), r, (255, 255, 255), -1)
-    #    cv2.circle(output, (x, y), r, (0, 255, 0), 1)
-    #    cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
-      #time.sleep(0.5)
-      #print( "Column Number: ")
-      #print( x)
-      #print( "Row Number: ")
-      #print( y)
-      #print( "Radius is: ")
-      #print( r)
-
-  # Display the resulting frame
-  cv2.imshow('gray',gray)
-  cv2.imshow('frame',output)
-  if cv2.waitKey(1) & 0xFF == ord('q'):
-    break
+plt.show()
 
 # When everything done, release the capture
 cap.release()
