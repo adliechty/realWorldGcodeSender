@@ -88,12 +88,10 @@ def pathToPoints3D(path, pointsPerCurve):
 def dist(p1, p2):
   return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
 
-def scalePoints(points, scale):
+def scalePoints(points, scaleX, scaleY):
   for point in points:
-    point.X = point.X * scale
-    point.Y = point.Y * scale
-    if point.Z != None:
-      point.Z = point.Z * scale
+    point.X = point.X * scaleX
+    point.Y = point.Y * scaleY
 
 def offsetPoints(points, X, Y):
   for point in points:
@@ -123,13 +121,12 @@ def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0):
     points = pathToPoints3D(path, 10)
     #offset is in inches, convert to mm, which is what svg is in
     offsetPoints(points, xOff * 25.4, yOff * 25.4)
-    scalePoints(points, xPixelPerMm)
+    scalePoints(points, xPixelPerMm, yPixelPerMm)
     prevPoint = None
     for point in points:
       newPoint = origin + \
                  np.matmul([point.X, point.Y], [[xVectorNorm[0], xVectorNorm[1]], \
-                                                [yVectorNorm[0], yVectorNorm[1]]]) + \
-                 np.array([xOff, yOff])
+                                                [yVectorNorm[0], yVectorNorm[1]]])
       #print(newPoint)
       if prevPoint is not None:
         cv2.line(overlay, prevPoint.astype(np.int), newPoint.astype(np.int), (255, 0, 0), int(pixelsPerInch * 0.25))
@@ -138,13 +135,22 @@ def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0):
       
 
 def updateXOffset(text):
+  global xOffset
+  global yOffset
   xOffset = float(text)
   overlay = overlaySvg(output, origin, xVector, yVector, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
   print("inX: " + str(xOffset))
+  print("Y: " + str(yOffset))
   
 def updateYOffset(text):
+  global xOffset
+  global yOffset
   yOffset = float(text)
+  overlay = overlaySvg(output, origin, xVector, yVector, xOffset, yOffset)
+  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+  print("X: " + str(xOffset))
+  print("inY: " + str(yOffset))
 
 def updateRotation(text):
   rotation = float(rotation)
