@@ -10,8 +10,16 @@ from matplotlib import pyplot as plt
 from matplotlib.widgets import TextBox
 
 global xOffset
+xOffset = 0
 global yOffset
+yOffset = 0
 global rotation
+rotation = 0
+global output
+global origin
+global xVector
+global yVector
+global matPlotImage
 
 ####################################################################################
 # SHould put these in a shared libary
@@ -87,7 +95,12 @@ def scalePoints(points, scale):
     if point.Z != None:
       point.Z = point.Z * scale
 
-def overlaySvg(image, origin, xVector, yVector):
+def offsetPoints(points, X, Y):
+  for point in points:
+    point.X = point.X + X
+    point.Y = point.Y + Y
+
+def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0):
   overlay = image.copy()
   # 889mm between the dots, calculate number of pixels per mm
   xLineEnd = origin + xVector
@@ -108,15 +121,15 @@ def overlaySvg(image, origin, xVector, yVector):
   
   for path in paths:
     points = pathToPoints3D(path, 10)
+    #offset is in inches, convert to mm, which is what svg is in
+    offsetPoints(points, xOff * 25.4, yOff * 25.4)
     scalePoints(points, xPixelPerMm)
     prevPoint = None
     for point in points:
       newPoint = origin + \
-                 np.matmul([point.X, point.Y], [[xVectorNorm[0], yVectorNorm[0]], \
-                                                [xVectorNorm[1], yVectorNorm[1]]])
-      newPoint = origin + \
                  np.matmul([point.X, point.Y], [[xVectorNorm[0], xVectorNorm[1]], \
-                                                [yVectorNorm[0], yVectorNorm[1]]])
+                                                [yVectorNorm[0], yVectorNorm[1]]]) + \
+                 np.array([xOff, yOff])
       #print(newPoint)
       if prevPoint is not None:
         cv2.line(overlay, prevPoint.astype(np.int), newPoint.astype(np.int), (255, 0, 0), int(pixelsPerInch * 0.25))
@@ -126,6 +139,9 @@ def overlaySvg(image, origin, xVector, yVector):
 
 def updateXOffset(text):
   xOffset = float(text)
+  overlay = overlaySvg(output, origin, xVector, yVector, xOffset, yOffset)
+  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+  print("inX: " + str(xOffset))
   
 def updateYOffset(text):
   yOffset = float(text)
@@ -298,7 +314,7 @@ fig, ax = plt.subplots()
 fig.tight_layout()
 plt.subplots_adjust(bottom=0.2)
 plt.axis([1280,0, 0, 800])
-plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 xAxes = plt.axes([0.2, 0.1, 0.2, 0.04])
 xBox = TextBox(xAxes, "xOffset (in)", initial="0")
 xBox.on_submit(updateXOffset)
