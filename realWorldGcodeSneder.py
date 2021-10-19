@@ -19,6 +19,8 @@ global output
 global origin
 global xVector
 global yVector
+global xVectorNorm
+global yVectorNorm
 global matPlotImage
 
 ####################################################################################
@@ -98,15 +100,19 @@ def offsetPoints(points, X, Y):
     point.X = point.X + X
     point.Y = point.Y + Y
 
-def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0):
+def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 0, yOffPixel = 0):
+  global xVectorNorm
+  global yVectorNorm
   overlay = image.copy()
   # 889mm between the dots, calculate number of pixels per mm
   xLineEnd = origin + xVector
   yLineEnd = origin + yVector
   cv2.line(overlay, origin.astype(np.int), xLineEnd.astype(np.int), (0, 0, 255), 3)
   cv2.line(overlay, origin.astype(np.int), yLineEnd.astype(np.int), (0, 255, 0), 3)
-  xPixelPerMm = dist((0, 0), xVector) / 889
-  yPixelPerMm = dist((0, 0), yVector) / 889
+  #33mm Y
+  #40mm X
+  xPixelPerMm = dist((0, 0), xVector) / (40 * 25.4)
+  yPixelPerMm = dist((0, 0), yVector) / (33 * 25.4)
   pixelsPerInch = (xPixelPerMm + yPixelPerMm) / 2.0 * 25.4
   print(xPixelPerMm)
   print(yPixelPerMm)
@@ -122,11 +128,13 @@ def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0):
     #offset is in inches, convert to mm, which is what svg is in
     offsetPoints(points, xOff * 25.4, yOff * 25.4)
     scalePoints(points, xPixelPerMm, yPixelPerMm)
+    offsetPoints(points, xOffPixel, yOffPixel)
     prevPoint = None
     for point in points:
       newPoint = origin + \
-                 np.matmul([point.X, point.Y], [[xVectorNorm[0], xVectorNorm[1]], \
-                                                [yVectorNorm[0], yVectorNorm[1]]])
+                 np.matmul([[xVectorNorm[0], yVectorNorm[0]], \
+                            [xVectorNorm[1], yVectorNorm[1]]], \
+                            [point.X, point.Y])
       #print(newPoint)
       if prevPoint is not None:
         cv2.line(overlay, prevPoint.astype(np.int), newPoint.astype(np.int), (255, 0, 0), int(pixelsPerInch * 0.25))
@@ -154,6 +162,25 @@ def updateYOffset(text):
 
 def updateRotation(text):
   rotation = float(rotation)
+
+def onclick(event):
+  global origin
+  global xVectorNorm
+  global yVectorNorm
+  print(str(event.xdata) + " " + str(event.ydata))
+  print("     " + str(origin))
+  #X is mirrored for matplotlib, so do origin - x for X.
+  pixelsToOrigin = np.array([[event.xdata - origin[0]], [event.ydata - origin[1]]])
+  newPointMm = np.matmul(np.linalg.inv([[xVectorNorm[0], yVectorNorm[0]], \
+                                        [xVectorNorm[1], yVectorNorm[1]]]), pixelsToOrigin)
+  newPointIn = newPointMm / 25.4
+  print("  newPointIn " + str(newPointIn))
+  print("      " + str(newPointIn[0][0]))
+  print("      " + str(newPointIn[1][0]))
+  
+
+  overlay = overlaySvg(output, origin, xVector, yVector, newPointIn[0][0], newPointIn[1][0])
+  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
 #############################################################################
 # Main
@@ -304,7 +331,7 @@ yVector = np.array([centers[2][0] - centers[0][0], centers[2][1] - centers[0][1]
 angle = math.atan2(xVector[0] * yVector[1] - xVector[1]*yVector[0], xVector[0]*yVector[0] + xVector[1]*yVector[1]) * 360 / 3.14159 / 2.0
 
 # Make it so centers are ordered, origin, xAxis, yAxis
-if angle < 0:
+if angle >= 0:
   temp = xVector
   xVector = yVector
   yVector = temp
@@ -332,6 +359,8 @@ yBox.on_submit(updateYOffset)
 rAxes = plt.axes([0.2, 0.01, 0.2, 0.04])
 rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
 rBox.on_submit(updateRotation)
+
+cid = fig.canvas.mpl_connect('button_press_event', onclick)
 
 plt.show()
 
