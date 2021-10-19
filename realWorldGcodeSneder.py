@@ -113,10 +113,10 @@ def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 
   yLineEnd = origin + yVector
   cv2.line(overlay, origin.astype(np.int), xLineEnd.astype(np.int), (0, 0, 255), 3)
   cv2.line(overlay, origin.astype(np.int), yLineEnd.astype(np.int), (0, 255, 0), 3)
-  #33mm Y
+  #33.25mm Y
   #40mm X
   xPixelPerMm = dist((0, 0), xVector) / (40 * 25.4)
-  yPixelPerMm = dist((0, 0), yVector) / (33 * 25.4)
+  yPixelPerMm = dist((0, 0), yVector) / (33.25 * 25.4)
   pixelsPerInch = (xPixelPerMm + yPixelPerMm) / 2.0 * 25.4
   print(xPixelPerMm)
   print(yPixelPerMm)
