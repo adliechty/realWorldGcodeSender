@@ -22,6 +22,8 @@ global yVector
 global xVectorNorm
 global yVectorNorm
 global matPlotImage
+global xPixelPerMm
+global yPixelPerMm
 
 ####################################################################################
 # SHould put these in a shared libary
@@ -103,6 +105,8 @@ def offsetPoints(points, X, Y):
 def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 0, yOffPixel = 0):
   global xVectorNorm
   global yVectorNorm
+  global xPixelPerMm
+  global yPixelPerMm
   overlay = image.copy()
   # 889mm between the dots, calculate number of pixels per mm
   xLineEnd = origin + xVector
@@ -167,13 +171,17 @@ def onclick(event):
   global origin
   global xVectorNorm
   global yVectorNorm
+  global xPixelPerMm  
+  global yPixelPerMm
+
   print(str(event.xdata) + " " + str(event.ydata))
   print("     " + str(origin))
   #X is mirrored for matplotlib, so do origin - x for X.
   pixelsToOrigin = np.array([[event.xdata - origin[0]], [event.ydata - origin[1]]])
-  newPointMm = np.matmul(np.linalg.inv([[xVectorNorm[0], yVectorNorm[0]], \
+  newPointPx = np.matmul(np.linalg.inv([[xVectorNorm[0], yVectorNorm[0]], \
                                         [xVectorNorm[1], yVectorNorm[1]]]), pixelsToOrigin)
-  newPointIn = newPointMm / 25.4
+  newPointIn = np.array([newPointPx[0] / xPixelPerMm / 25.4, \
+                         newPointPx[1] / yPixelPerMm / 25.4])
   print("  newPointIn " + str(newPointIn))
   print("      " + str(newPointIn[0][0]))
   print("      " + str(newPointIn[1][0]))
