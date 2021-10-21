@@ -9,6 +9,12 @@ from svgpathtools import svg2paths, wsvg, svg2paths2, polyline
 from matplotlib import pyplot as plt
 from matplotlib.widgets import TextBox
 
+import sys
+sys.path.insert(1, '../tutorial_homography/')
+#Import code from compute_homography github project
+from compute_homography import compute_transorm_matrix, pixel_to_mm, mm_to_pixel
+
+
 global xOffset
 xOffset = 0
 global yOffset
