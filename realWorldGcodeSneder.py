@@ -31,6 +31,8 @@ global matPlotImage
 global xPixelPerMm
 global yPixelPerMm
 
+global pixelToMmTransformMatrix
+
 ####################################################################################
 # SHould put these in a shared libary
 ####################################################################################
@@ -108,6 +110,34 @@ def offsetPoints(points, X, Y):
     point.X = point.X + X
     point.Y = point.Y + Y
 
+def overlaySvg2(image, pixelToMmTransformMatrix, xOff = 0, yOff = 0):
+  overlay = image.copy()
+  print(mm_to_pixel((0,         0, 1), pixelToMmTransformMatrix))
+  print(mm_to_pixel((40 * 25.4, 0, 1), pixelToMmTransformMatrix))
+  origin = mm_to_pixel((0,         0, 1), pixelToMmTransformMatrix).astype(np.int)
+  cv2.line(overlay, mm_to_pixel((0,         0, 1), pixelToMmTransformMatrix), \
+                    mm_to_pixel((40 * 25.4, 0, 1), pixelToMmTransformMatrix), \
+                    (0,0,255), 3)
+
+  cv2.line(overlay, mm_to_pixel((0, 0,           1), pixelToMmTransformMatrix), \
+                    mm_to_pixel((0, 33.25 * 25.4,1), pixelToMmTransformMatrix), \
+                    (0,0,255), 3)
+
+  paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+
+  for path in paths:
+    points = pathToPoints3D(path, 10)
+    #offset is in inches, convert to mm, which is what svg is in
+    offsetPoints(points, xOff * 25.4, yOff * 25.4)
+    prevPoint = None
+    for point in points:
+      newPoint = mm_to_pixel((point.X, point.Y, 1), pixelToMmTransformMatrix)
+      if prevPoint is not None:
+        cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 3)
+      prevPoint = newPoint
+
+  return overlay
+
 def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 0, yOffPixel = 0):
   global xVectorNorm
   global yVectorNorm
@@ -156,7 +186,7 @@ def updateXOffset(text):
   global xOffset
   global yOffset
   xOffset = float(text)
-  overlay = overlaySvg(output, origin, xVector, yVector, xOffset, yOffset)
+  overlay = overlaySvg2(output, pixelToMmTransformMatrix, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
   print("inX: " + str(xOffset))
   print("Y: " + str(yOffset))
@@ -165,7 +195,7 @@ def updateYOffset(text):
   global xOffset
   global yOffset
   yOffset = float(text)
-  overlay = overlaySvg(output, origin, xVector, yVector, xOffset, yOffset)
+  overlay = overlaySvg2(output, pixelToMmTransformMatrix, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
   print("X: " + str(xOffset))
   print("inY: " + str(yOffset))
@@ -193,7 +223,7 @@ def onclick(event):
   print("      " + str(newPointIn[1][0]))
   
 
-  overlay = overlaySvg(output, origin, xVector, yVector, newPointIn[0][0], newPointIn[1][0])
+  overlay = overlaySvg2(output, pixelToMmTransformMatrix, newPointIn[0][0], newPointIn[1][0])
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
 #############################################################################
@@ -328,6 +358,7 @@ for contour in contours:
 cv2.drawContours(output, insideContours, -1, (0,255,0), 3)
 #print(centers)
 
+
 distToOthers = []
 distToOthers.append(dist(centers[0], centers[1]) + dist(centers[0], centers[2]))
 distToOthers.append(dist(centers[1], centers[0]) + dist(centers[1], centers[2]))
@@ -354,7 +385,14 @@ print("origin: " + str(origin))
 print("xVector: " + str(xVector))
 print("yVector: " + str(yVector))
 
+#33.25in Y
+#40in    X
+pixelToMmTransformMatrix = compute_transorm_matrix( {(0,0): origin,         \
+                                                    (40 * 25.4, 0):     origin + xVector,       \
+                                                    (0, 33.25 * 25.4) : origin + yVector})
+
 overlay = overlaySvg(output, origin, xVector, yVector)
+overlay = overlaySvg2(output, pixelToMmTransformMatrix)
 
 
 fig, ax = plt.subplots()
