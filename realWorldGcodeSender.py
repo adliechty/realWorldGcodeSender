@@ -110,17 +110,46 @@ def offsetPoints(points, X, Y):
     point.X = point.X + X
     point.Y = point.Y + Y
 
+def mm_to_pixel_tuple(a, b):
+  return(tuple(mm_to_pixel(a, b).astype(np.int)[0:2]))
+
+
+def overlaySvg3(image, xOff = 0, yOff = 0):
+  overlay = image.copy()
+  origin = (0,0)
+  cv2.line(overlay, (0,0), (400, 0), (0,0,255), 3)
+
+  cv2.line(overlay, (0,0), (0, 400), (0,0,255), 3)
+
+  paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+
+  for path in paths:
+    points = pathToPoints3D(path, 10)
+    #offset is in inches, convert to mm, which is what svg is in
+    offsetPoints(points, xOff * 25.4, yOff * 25.4)
+    prevPoint = None
+    for point in points:
+      newPoint = (int(point.X/2), int(point.Y/2))
+      if prevPoint is not None:
+        cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 3)
+      prevPoint = newPoint
+
+  return overlay
+
 def overlaySvg2(image, pixelToMmTransformMatrix, xOff = 0, yOff = 0):
   overlay = image.copy()
-  print(mm_to_pixel((0,         0, 1), pixelToMmTransformMatrix))
-  print(mm_to_pixel((40 * 25.4, 0, 1), pixelToMmTransformMatrix))
-  origin = mm_to_pixel((0,         0, 1), pixelToMmTransformMatrix).astype(np.int)
-  cv2.line(overlay, mm_to_pixel((0,         0, 1), pixelToMmTransformMatrix), \
-                    mm_to_pixel((40 * 25.4, 0, 1), pixelToMmTransformMatrix), \
-                    (0,0,255), 3)
+  print(mm_to_pixel_tuple((0,         0, 1), pixelToMmTransformMatrix))
+  print(mm_to_pixel_tuple((40 * 25.4, 0, 1), pixelToMmTransformMatrix))
+  origin = mm_to_pixel_tuple((0,         0, 1), pixelToMmTransformMatrix)
+  corner1 = mm_to_pixel_tuple((40 * 25.4, 0, 1), pixelToMmTransformMatrix)
+  print()
+  print(origin)
+  print()
+  print(corner1)
+  cv2.line(overlay, origin, corner1, (0,0,255), 3)
 
-  cv2.line(overlay, mm_to_pixel((0, 0,           1), pixelToMmTransformMatrix), \
-                    mm_to_pixel((0, 33.25 * 25.4,1), pixelToMmTransformMatrix), \
+  cv2.line(overlay, origin, \
+                    mm_to_pixel_tuple((0, 33.25 * 25.4,1), pixelToMmTransformMatrix), \
                     (0,0,255), 3)
 
   paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
@@ -131,7 +160,7 @@ def overlaySvg2(image, pixelToMmTransformMatrix, xOff = 0, yOff = 0):
     offsetPoints(points, xOff * 25.4, yOff * 25.4)
     prevPoint = None
     for point in points:
-      newPoint = mm_to_pixel((point.X, point.Y, 1), pixelToMmTransformMatrix)
+      newPoint = mm_to_pixel_tuple((point.X, point.Y, 1), pixelToMmTransformMatrix)
       if prevPoint is not None:
         cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 3)
       prevPoint = newPoint
@@ -147,8 +176,8 @@ def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 
   # 889mm between the dots, calculate number of pixels per mm
   xLineEnd = origin + xVector
   yLineEnd = origin + yVector
-  cv2.line(overlay, origin.astype(np.int), xLineEnd.astype(np.int), (0, 0, 255), 3)
-  cv2.line(overlay, origin.astype(np.int), yLineEnd.astype(np.int), (0, 255, 0), 3)
+  cv2.line(overlay, tuple(origin.astype(np.int)), tuple(xLineEnd.astype(np.int)), (0, 0, 255), 3)
+  cv2.line(overlay, tuple(origin.astype(np.int)), tuple(yLineEnd.astype(np.int)), (0, 255, 0), 3)
   #33.25mm Y
   #40mm X
   xPixelPerMm = dist((0, 0), xVector) / (40 * 25.4)
@@ -177,7 +206,7 @@ def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 
                             [point.X, point.Y])
       #print(newPoint)
       if prevPoint is not None:
-        cv2.line(overlay, prevPoint.astype(np.int), newPoint.astype(np.int), (255, 0, 0), int(pixelsPerInch * 0.25))
+        cv2.line(overlay, tuple(prevPoint.astype(np.int)), tuple(newPoint.astype(np.int)), (255, 0, 0), int(pixelsPerInch * 0.25))
       prevPoint = newPoint
   return overlay
       
@@ -243,9 +272,10 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 #Wait until 3 circles are found (contour for circle, contour for mask around circle)
 contours = []
-while len(contours) != 6:
+while len(contours) != 8:
   # Capture frame-by-frame
-  ret, frame = cap.read()
+  #ret, frame = cap.read()
+  frame = cv2.imread('test.jpeg')
 
   # load the image, clone it for output, and then convert it to grayscale
       
@@ -345,6 +375,7 @@ avgArea = avgArea / len(contours)
 
 insideContours = []
 centers = []
+i  = 0
 for contour in contours:
   area = cv2.contourArea(contour)
   if area < avgArea:
@@ -353,19 +384,29 @@ for contour in contours:
     centers.append((M["m10"] / M["m00"], M["m01"] / M["m00"]))
     x = int(centers[-1][0])
     y = int(centers[-1][1])
-    cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
+    if i == 0:
+      cv2.rectangle(output, (x - 1, y - 40), (x + 1, y + 1), (0, 0, 255), -1)
+    elif i == 1:
+      cv2.rectangle(output, (x - 1, y - 30), (x + 1, y + 1), (0, 0, 255), -1)
+    elif i == 2:
+      cv2.rectangle(output, (x - 1, y - 20), (x + 1, y + 1), (0, 0, 255), -1)
+    else:
+      cv2.rectangle(output, (x - 1, y - 10), (x + 1, y + 1), (0, 0, 255), -1)
+    i = i + 1
 
 cv2.drawContours(output, insideContours, -1, (0,255,0), 3)
 #print(centers)
 
 
 distToOthers = []
-distToOthers.append(dist(centers[0], centers[1]) + dist(centers[0], centers[2]))
-distToOthers.append(dist(centers[1], centers[0]) + dist(centers[1], centers[2]))
-distToOthers.append(dist(centers[2], centers[0]) + dist(centers[2], centers[1]))
+#distToOthers.append(dist(centers[0], centers[1]) + dist(centers[0], centers[2]))
+#distToOthers.append(dist(centers[1], centers[0]) + dist(centers[1], centers[2]))
+#distToOthers.append(dist(centers[2], centers[0]) + dist(centers[2], centers[1]))
+#distToOthers.append(dist(centers[3], centers[2]) + dist(centers[3], centers[1]))
+distToOthers = [0,3,1,4]
 
 # sort centers by dist to others, such that shortest distance is first (start of vector)
-centers = [x for _, x in sorted(zip(distToOthers, centers))]
+#centers = [x for _, x in sorted(zip(distToOthers, centers))]
 #centers = [(100,0), (100, 100), (0,0)]
 #centers = [(100,0), (0, 0), (100,100)]
 #print(centers)
@@ -387,12 +428,42 @@ print("yVector: " + str(yVector))
 
 #33.25in Y
 #40in    X
-pixelToMmTransformMatrix = compute_transorm_matrix( {(0,0): origin,         \
-                                                    (40 * 25.4, 0):     origin + xVector,       \
-                                                    (0, 33.25 * 25.4) : origin + yVector})
+#pixelToMmTransformMatrix = compute_transorm_matrix( {(0,0): origin,         \
+#                                                    (60 * 25.4, 0):     origin + xVector,       \
+#                                                    (0, 40 * 25.4) : origin + yVector})
+pixelToMmTransformMatrix = compute_transorm_matrix( {(0,0): np.array(centers[0]),         \
+                                                    (40 * 25.4, 0):     np.array(centers[1]),       \
+                                                    (0, 60 * 25.4) : np.array(centers[2]),
+                                                    (40 * 25.4, 60 * 25.4) : np.array(centers[3])})
 
-overlay = overlaySvg(output, origin, xVector, yVector)
-overlay = overlaySvg2(output, pixelToMmTransformMatrix)
+print("centers")
+print(centers)
+h, status = cv2.findHomography(np.array([[centers[0][0], centers[0][1]], \
+                                                  [centers[1][0], centers[1][1]], \
+                                                  [centers[2][0], centers[2][1]], \
+                                                  [centers[3][0], centers[3][1]]]), \
+                                                  np.array([[0,600],[400,600],[0,0],[400,0]]) \
+                                                  )
+im_out = cv2.warpPerspective(output, h, (int(800), int(1200)))
+#print(im_out)
+#x = int(25.4 * 20)
+#y = int(25.4 * 20)
+#cv2.rectangle(im_out, (x - 1, y - 20), (x + 1, y + 1), (0, 0, 255), -1)
+#x = int(25.4 * 40)
+#y = int(25.4 * 20)
+#cv2.rectangle(im_out, (x - 1, y - 20), (x + 1, y + 1), (0, 0, 255), -1)
+#x = int(25.4 * 40)
+#y = int(25.4 * 40)
+#cv2.rectangle(im_out, (x - 1, y - 20), (x + 1, y + 1), (0, 0, 255), -1)
+#x = int(25.4 * 20)
+#y = int(25.4 * 40)
+#cv2.rectangle(im_out, (x - 1, y - 20), (x + 1, y + 1), (0, 0, 255), -1)
+
+#cv2.imshow("warpedImage", im_out)
+
+#overlay = overlaySvg(im_out, origin, xVector, yVector)
+#overlay = overlaySvg2(imout, pixelToMmTransformMatrix)
+overlay = overlaySvg3(im_out)
 
 
 fig, ax = plt.subplots()
