@@ -275,7 +275,7 @@ contours = []
 while len(contours) != 8:
   # Capture frame-by-frame
   #ret, frame = cap.read()
-  frame = cv2.imread('test.jpeg')
+  frame = cv2.imread('cnc.jpeg')
 
   # load the image, clone it for output, and then convert it to grayscale
       
