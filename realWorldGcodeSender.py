@@ -255,6 +255,43 @@ def onclick(event):
   overlay = overlaySvg2(output, pixelToMmTransformMatrix, newPointIn[0][0], newPointIn[1][0])
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
+def crop_half_vertically(img):
+  #cropped_img = image[,int(image.shape[1]/2):int(image.shape[1])]
+  #height = img.shape[0]
+  width = img.shape[1]
+  # Cut the image in half
+  width_cutoff = int(width // 2)
+  left = img[:, :width_cutoff]
+  right = img[:, width_cutoff:]
+  return left, right
+
+def generate_dest_locations(boxWidth, corners, image):
+  prevX=0
+  prevY=0
+  locations = []
+  yIndex = 0
+  xIndex = 0
+  for corner in corners:
+    x,y= corner[0]
+    x= int(x)
+    y= int(y)
+
+    #cv2.rectangle(gray, (prevX,prevY),(x,y),(i*3,0,0),-1)
+    image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
+                                     (255,255,255), 5)
+    locations.append([xIndex * boxWidth, yIndex * boxWidth])
+    if xIndex == 2:
+      xIndex = 0
+      yIndex = yIndex + 1
+    else:
+      xIndex = xIndex + 1
+    prevX = x
+    prevY = y
+  return locations, image
+
+def pixel_loc_at_cnc_bed(boxWidth, backward):
+  return cv2.perspectiveTransform(np.array([[0,0],[boxWidth*8,0],[boxWidth * 8,boxWidth*22],[0,boxWidth*22]]).reshape(-1,1,2), backward)
+
 #############################################################################
 # Main
 #############################################################################
@@ -275,7 +312,8 @@ contours = []
 while len(contours) != 8:
   # Capture frame-by-frame
   #ret, frame = cap.read()
-  frame = cv2.imread('cnc.jpeg')
+  frame = cv2.imread('IMG_20211208_194811847.jpg')
+  img = cv2.imread('IMG_20211208_194811847.jpg')
 
   # load the image, clone it for output, and then convert it to grayscale
       
@@ -284,17 +322,50 @@ while len(contours) != 8:
   #######################################################################
   # Get grayscale image above threshold
   #######################################################################
-  mask = cv2.inRange(frame, (150, 150, 150), (255, 255, 255))
-  frame = cv2.bitwise_and(frame, frame, mask=mask)
+  #mask = cv2.inRange(frame, (150, 150, 150), (255, 255, 255))
+  #frame = cv2.bitwise_and(frame, frame, mask=mask)
   gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+  gray1,gray2 = crop_half_vertically(gray)
+  gray = gray1
+  ret, corners = cv2.findChessboardCorners(gray, (3, 22), None)
+  boxWidth = 32.8125
+
+  #Generate destination locations
+  locations, gray = generate_dest_locations(boxWidth, corners, gray)
+
+  #Determine forward and backware transformation through homography
+  forward, status = cv2.findHomography(np.array(corners), np.array(locations))
+  backward, status = cv2.findHomography(np.array(locations), np.array(corners))
+  
+  im_out = cv2.warpPerspective(gray, forward, (int(800), int(1200)))
+  cv2.rectangle(im_out, (int(32.8125*7),int(32.8125*1)),(int(32.8125*8),int(32.8125*2)),(255,0,0),-1)
+
+  pixelsAtBed = pixel_loc_at_cnc_bed(boxWidth, backward)
+  #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
+  line1 = tuple(pixelsAtBed[0][0].astype(np.int))
+  line2   = tuple(pixelsAtBed[1][0].astype(np.int))
+  line3   = tuple(pixelsAtBed[2][0].astype(np.int))
+  line4   = tuple(pixelsAtBed[3][0].astype(np.int))
+  cv2.line(gray, line1,line2,(255,0,0),3)
+  cv2.line(gray, line2,line3,(255,0,0),3)
+  cv2.line(gray, line3,line4,(255,0,0),3)
+  cv2.line(gray, line4,line1,(255,0,0),3)
+
+  
+  cv2.imshow('dst',im_out)
+  gray = cv2.resize(gray, (1280, 800))
+  
+  cv2.imshow('image',gray)
+  cv2.waitKey()
   #gray = blackWhite
+  print(gray.shape)
   
   #######################################################################
   # filter out noise
   #######################################################################
   # apply GuassianBlur to reduce noise. medianBlur is also added for smoothening, reducing noise.
-  gray = cv2.GaussianBlur(gray,(7,7),0);
-  gray = cv2.medianBlur(gray,7)
+  #gray = cv2.GaussianBlur(gray,(7,7),0);
+  #gray = cv2.medianBlur(gray,7)
   
   #######################################################################
   # Get black and white image of gray scale
@@ -306,12 +377,12 @@ while len(contours) != 8:
   # Find edges
   #######################################################################
   #Adaptive Guassian Threshold is to detect sharp edges in the Image. For more information Google it.
-  gray = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-            cv2.THRESH_BINARY,9,10.5)
+  #gray = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+  #          cv2.THRESH_BINARY,9,10.5)
   
-  kernel = np.ones((5,5),np.uint8)
-  gray = cv2.erode(gray,kernel,iterations = 1)
-  gray = cv2.dilate(gray,kernel,iterations = 1)
+  #kernel = np.ones((5,5),np.uint8)
+  #gray = cv2.erode(gray,kernel,iterations = 1)
+  #gray = cv2.dilate(gray,kernel,iterations = 1)
 
   
   #######################################################################
@@ -363,6 +434,9 @@ while len(contours) != 8:
     blackWhite = cv2.bitwise_and(blackWhite, blackWhite, mask=circleMask)
     contours, hierarchy = cv2.findContours(blackWhite,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
     #print("Contours found: " + str(len(contours)))
+    cv2.imshow('image',gray)
+    cv2.waitKey()
+    
 
      
 #######################################################################
