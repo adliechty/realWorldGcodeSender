@@ -10,9 +10,6 @@ from matplotlib import pyplot as plt
 from matplotlib.widgets import TextBox
 
 import sys
-sys.path.insert(1, '../tutorial_homography/')
-#Import code from compute_homography github project
-from compute_homography import compute_transorm_matrix, pixel_to_mm, mm_to_pixel
 
 
 global xOffset
@@ -265,20 +262,74 @@ def crop_half_vertically(img):
   right = img[:, width_cutoff:]
   return left, right
 
+def idToLoc(ID):
+  loc = [ID % 11, int(ID / 11)]
+  if loc[1] % 2 == 0:
+    loc[0] = loc[0]*2 + 1
+  else:
+    loc[0] = loc[0]*2
+
+  return loc
+def generate_dest_locations2(boxWidth, corners, ids, image):
+  newCorners = []
+  locations = []
+  for box, curId in zip(corners, ids):
+    print("curId: " + str(curId[0]))
+    print("box" + str(box))
+    print()
+    boxLoc = idToLoc(curId[0])
+    for boxPoints in box:
+      print("boxPoints:" + str(boxPoints))
+      print()
+      prevX = int(boxPoints[0][0]) - 200
+      prevY = int(boxPoints[0][1])
+      i = 0
+      for point in boxPoints:
+        x= int(point[0])
+        y= int(point[1])
+        print("point:" + str(point))
+        print()
+        newCorners.append(point)
+        image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
+                                (200,0,0), 5)
+        print(boxLoc)
+        curLoc = [0,0]
+        if i == 0:
+          curLoc[0] = boxLoc[0] + 0
+          curLoc[1] = boxLoc[1] + 0
+        elif i ==1:
+          curLoc[0] = boxLoc[0] + 1
+          curLoc[1] = boxLoc[1] + 0
+        elif i == 2:
+          curLoc[0] = boxLoc[0] + 1
+          curLoc[1] = boxLoc[1] + 1
+        else:
+          curLoc[0] = boxLoc[0] + 0
+          curLoc[1] = boxLoc[1] + 1
+        curLoc[0] = curLoc[0] * boxWidth
+        curLoc[1] = curLoc[1] * boxWidth
+        print("curLoc" + str(curLoc))
+        locations.append(curLoc)
+        prevX = x
+        prevY = y
+        i = i + 1
+  corners = np.array(newCorners)
+  return corners, locations, image
+
 def generate_dest_locations(boxWidth, corners, image):
-  prevX=0
-  prevY=0
+  prevX=2000
+  prevY=2000
   locations = []
   yIndex = 0
   xIndex = 0
   for corner in corners:
-    x,y= corner[0]
+    x,y= corner
     x= int(x)
     y= int(y)
 
     #cv2.rectangle(gray, (prevX,prevY),(x,y),(i*3,0,0),-1)
     image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
-                                     (255,255,255), 5)
+                                     (200,0,0), 5)
     locations.append([xIndex * boxWidth, yIndex * boxWidth])
     if xIndex == 2:
       xIndex = 0
@@ -291,6 +342,7 @@ def generate_dest_locations(boxWidth, corners, image):
 
 def pixel_loc_at_cnc_bed(boxWidth, backward):
   return cv2.perspectiveTransform(np.array([[0,0],[boxWidth*8,0],[boxWidth * 8,boxWidth*22],[0,boxWidth*22]]).reshape(-1,1,2), backward)
+
 
 #############################################################################
 # Main
@@ -312,8 +364,8 @@ contours = []
 while len(contours) != 8:
   # Capture frame-by-frame
   #ret, frame = cap.read()
-  frame = cv2.imread('IMG_20211208_194811847.jpg')
-  img = cv2.imread('IMG_20211208_194811847.jpg')
+  frame = cv2.imread('cnc2.jpeg')
+  img = cv2.imread('cnc2.jpeg')
 
   # load the image, clone it for output, and then convert it to grayscale
       
@@ -326,12 +378,41 @@ while len(contours) != 8:
   #frame = cv2.bitwise_and(frame, frame, mask=mask)
   gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
   gray1,gray2 = crop_half_vertically(gray)
-  gray = gray1
-  ret, corners = cv2.findChessboardCorners(gray, (3, 22), None)
+  gray = gray2
+  gray = cv2.resize(gray, (int(sys.argv[1]), int(sys.argv[2])))
+  #gray = cv2.resize(gray, (1000, int(gray.shape[1]/3.25)))
+
+  #ret, corners = cv2.findChessboardCorners(gray, (3, 22), None)
+  print(gray.shape)
+  forward, status = cv2.findHomography(np.array([[0,500],[1500,0],[1500,1000],[0,1500]]), \
+                                                np.array([[0,0],[4000,0],[4000,1500],[0,1500]]))
+  #gray = cv2.warpPerspective(gray, forward, (int(4000), int(1500)))
+
+  corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50))
+  #print(ids)
+  #newCorners = []
+  #for corner in corners:
+  #  for point in corner:
+  #    for p in point:
+  #      print(p)
+  #      newCorners.append(p)
+  #corners = np.array(newCorners)
+  #print("corners")
+  #print(corners)
+
   boxWidth = 32.8125
 
   #Generate destination locations
-  locations, gray = generate_dest_locations(boxWidth, corners, gray)
+  corners, locations, gray = generate_dest_locations2(boxWidth, corners, ids, gray)
+  #adasdfasdf
+
+  #locations, gray = generate_dest_locations(boxWidth, corners, gray)
+  #gray = cv2.resize(gray, (int(gray.shape[0]/2.25), int(gray.shape[1]/2.25)))
+  #cv2.imshow('image',gray)
+  #cv2.waitKey()
+  #asdfasdf
+  print(np.array(corners).shape)
+  print(np.array(locations).shape)
 
   #Determine forward and backware transformation through homography
   forward, status = cv2.findHomography(np.array(corners), np.array(locations))
@@ -346,10 +427,14 @@ while len(contours) != 8:
   line2   = tuple(pixelsAtBed[1][0].astype(np.int))
   line3   = tuple(pixelsAtBed[2][0].astype(np.int))
   line4   = tuple(pixelsAtBed[3][0].astype(np.int))
-  cv2.line(gray, line1,line2,(255,0,0),3)
-  cv2.line(gray, line2,line3,(255,0,0),3)
-  cv2.line(gray, line3,line4,(255,0,0),3)
-  cv2.line(gray, line4,line1,(255,0,0),3)
+  print(line1)
+  print(line2)
+  print(line3)
+  print(line4)
+  cv2.line(gray, line1,line2,(125,0,0),3)
+  cv2.line(gray, line2,line3,(155,0,0),3)
+  cv2.line(gray, line3,line4,(155,0,0),3)
+  cv2.line(gray, line4,line1,(155,0,0),3)
 
   
   cv2.imshow('dst',im_out)
