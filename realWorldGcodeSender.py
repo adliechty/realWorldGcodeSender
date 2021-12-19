@@ -262,59 +262,147 @@ def crop_half_vertically(img):
   right = img[:, width_cutoff:]
   return left, right
 
-def idToLoc(ID):
-  loc = [ID % 11, int(ID / 11)]
-  if loc[1] % 2 == 0:
-    loc[0] = loc[0]*2 + 1
-  else:
-    loc[0] = loc[0]*2
+#First ID is upper right, which is most positive Z and most positice Y
+# Z, Y
+idToLocDict = {0 :[2,21],
+               1 :[2,19],
+               2 :[2,17],
+               3 :[2,16],
+               4 :[2,13],
+               5 :[2,11],
+               6 :[2, 9],
+               7 :[2, 7],
+               8 :[2, 5],
+               9 :[2, 3],
+               10:[2, 1],
+               11:[1, 20],
+               12:[1, 18],
+               13:[1, 16],
+               14:[1, 14],
+               15:[1, 12],
+               16:[1, 10],
+               17:[1,  8],
+               18:[1,  6],
+               19:[1,  4],
+               20:[1,  2],
+               21:[1,  0],
+               22:[0,  21],
+               23:[0,  19],
+               24:[0,  17],
+               25:[0,  15],
+               26:[0,  13],
+               27:[0,  11],
+               28:[0,   9],
+               29:[0,   7],
+               30:[0,   5],
+               31:[0,   3],
+               32:[0,   1],
+               33:[0,  20],
+               34:[0,  18],
+               35:[0,  16],
+               36:[0,  14],
+               37:[0,  12],
+               38:[0,  10],
+               39:[0,   8],
+               40:[0,   6],
+               41:[0,   4],
+               42:[0,   2],
+               43:[0,   0],
+               44:[1,  21],
+               45:[1,  19],
+               46:[1,  17],
+               47:[1,  15],
+               48:[1,  13],
+               49:[1,  11],
+               50:[1,   9],
+               51:[1,   7],
+               52:[1,   5],
+               53:[1,   3],
+               54:[1,   1],
+               55:[2,  20],
+               56:[2,  18],
+               57:[2,  16],
+               58:[2,  14],
+               59:[2,  12],
+               60:[2,  10],
+               61:[2,   8],
+               62:[2,   6],
+               63:[2,   4],
+               64:[2,   2],
+               65:[2,   0]}
 
-  return loc
-def generate_dest_locations2(boxWidth, corners, ids, image):
-  newCorners = []
+def idToLoc(ID):
+  return idToLocDict[ID]
+
+def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = False):
+  pointList = []
   locations = []
-  for box, curId in zip(corners, ids):
-    print("curId: " + str(curId[0]))
-    print("box" + str(box))
-    print()
-    boxLoc = idToLoc(curId[0])
+  for box, ID in zip(boxes, ids):
+    #IDs above 33 are on right side, skip those if looking for left side points
+    if rightSide == False and ID >= 33:
+      continue
+    elif rightSide == True and ID < 33:
+      continue
+    boxLoc = idToLoc(ID[0])
     for boxPoints in box:
-      print("boxPoints:" + str(boxPoints))
-      print()
-      prevX = int(boxPoints[0][0]) - 200
+      prevX = int(boxPoints[0][0])
       prevY = int(boxPoints[0][1])
       i = 0
+   
+      font                   = cv2.FONT_HERSHEY_SIMPLEX
+      bottomLeftCornerOfText = prevX + 100,prevY
+      fontScale              = 1
+      fontColor              = (125,135,125)
+      thickness              = 3
+      lineType               = 2
+
+      cv2.putText(image,str(ID[0]), 
+          bottomLeftCornerOfText, 
+          font, 
+          fontScale,
+          fontColor,
+          thickness,
+          lineType)
       for point in boxPoints:
-        x= int(point[0])
-        y= int(point[1])
-        print("point:" + str(point))
-        print()
-        newCorners.append(point)
-        image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
-                                (200,0,0), 5)
-        print(boxLoc)
+        ############################################
+        # Generate list of points
+        ############################################
+        pointList.append(point)
+
+        
+        ############################################
+        # Generate point location based on boxWidth and index within box
+        ############################################
         curLoc = [0,0]
         if i == 0:
           curLoc[0] = boxLoc[0] + 0
           curLoc[1] = boxLoc[1] + 0
         elif i ==1:
-          curLoc[0] = boxLoc[0] + 1
-          curLoc[1] = boxLoc[1] + 0
-        elif i == 2:
-          curLoc[0] = boxLoc[0] + 1
-          curLoc[1] = boxLoc[1] + 1
-        else:
           curLoc[0] = boxLoc[0] + 0
-          curLoc[1] = boxLoc[1] + 1
+          curLoc[1] = boxLoc[1] - 1
+        elif i == 2:
+          curLoc[0] = boxLoc[0] - 1
+          curLoc[1] = boxLoc[1] - 1
+        else:
+          curLoc[0] = boxLoc[0] - 1
+          curLoc[1] = boxLoc[1] + 0
         curLoc[0] = curLoc[0] * boxWidth
         curLoc[1] = curLoc[1] * boxWidth
-        print("curLoc" + str(curLoc))
         locations.append(curLoc)
+
+        ############################################
+        # Display points on image
+        ############################################
+        x= int(point[0])
+        y= int(point[1])
+        image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
+                                (100,0,0), 5)
+
         prevX = x
         prevY = y
         i = i + 1
-  corners = np.array(newCorners)
-  return corners, locations, image
+        
+  return np.array(pointList), locations, image
 
 def generate_dest_locations(boxWidth, corners, image):
   prevX=2000
@@ -341,7 +429,7 @@ def generate_dest_locations(boxWidth, corners, image):
   return locations, image
 
 def pixel_loc_at_cnc_bed(boxWidth, backward):
-  return cv2.perspectiveTransform(np.array([[0,0],[boxWidth*8,0],[boxWidth * 8,boxWidth*22],[0,boxWidth*22]]).reshape(-1,1,2), backward)
+  return cv2.perspectiveTransform(np.array([[0,boxWidth*22],[boxWidth*8,boxWidth*22],[boxWidth * 8,-boxWidth*22],[0,-boxWidth*22]]).reshape(-1,1,2), backward)
 
 
 #############################################################################
@@ -364,6 +452,7 @@ contours = []
 while len(contours) != 8:
   # Capture frame-by-frame
   #ret, frame = cap.read()
+  boxWidth = 32.8125
   frame = cv2.imread('cnc2.jpeg')
   img = cv2.imread('cnc2.jpeg')
 
@@ -374,76 +463,55 @@ while len(contours) != 8:
   #######################################################################
   # Get grayscale image above threshold
   #######################################################################
-  #mask = cv2.inRange(frame, (150, 150, 150), (255, 255, 255))
-  #frame = cv2.bitwise_and(frame, frame, mask=mask)
   gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-  gray1,gray2 = crop_half_vertically(gray)
-  gray = gray2
-  gray = cv2.resize(gray, (int(sys.argv[1]), int(sys.argv[2])))
-  #gray = cv2.resize(gray, (1000, int(gray.shape[1]/3.25)))
+  #gray1,gray2 = crop_half_vertically(gray)
+  #gray = gray2
+  #gray = cv2.resize(gray, (int(sys.argv[1]), int(sys.argv[2])))
 
-  #ret, corners = cv2.findChessboardCorners(gray, (3, 22), None)
-  print(gray.shape)
-  forward, status = cv2.findHomography(np.array([[0,500],[1500,0],[1500,1000],[0,1500]]), \
-                                                np.array([[0,0],[4000,0],[4000,1500],[0,1500]]))
-  #gray = cv2.warpPerspective(gray, forward, (int(4000), int(1500)))
+  ########################################
+  # Get arco box information
+  ########################################
+  boxes, ids, rejectedImgPoints = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50))
+  print(boxes)
+  print(ids)
 
-  corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50))
-  #print(ids)
-  #newCorners = []
-  #for corner in corners:
-  #  for point in corner:
-  #    for p in point:
-  #      print(p)
-  #      newCorners.append(p)
-  #corners = np.array(newCorners)
-  #print("corners")
-  #print(corners)
+  ########################################
+  # Transform output into list of points and physical locations of those points
+  ########################################
+  pixelLoc = [None]*2
+  locations = [None]*2
+  pixelToPhysicalLoc = [None]*2
+  physicalToPixelLoc = [None]*2
+  pixelsAtBed = [None]*2
 
-  boxWidth = 32.8125
+  for i in range(0, 2):
+    pixelLoc[i],  locations[i],  gray = boxes_to_point_and_location_list(boxes, ids, boxWidth, gray, i == 1)
+    print(locations[i])
 
-  #Generate destination locations
-  corners, locations, gray = generate_dest_locations2(boxWidth, corners, ids, gray)
-  #adasdfasdf
+    ########################################
+    #Determine forward and backward transformation through homography
+    ########################################
+    pixelToPhysicalLoc[i], status = cv2.findHomography(np.array(pixelLoc[i]), np.array(locations[i]))
+    physicalToPixelLoc[i], status    = cv2.findHomography(np.array(locations[i]), np.array(pixelLoc[i]))
+    #im_out = cv2.warpPerspective(gray, forward, (int(800), int(600)))
+    #cv2.rectangle(im_out, (int(32.8125*7),int(32.8125*1)),(int(32.8125*8),int(32.8125*2)),(255,0,0),-1)
 
-  #locations, gray = generate_dest_locations(boxWidth, corners, gray)
-  #gray = cv2.resize(gray, (int(gray.shape[0]/2.25), int(gray.shape[1]/2.25)))
-  #cv2.imshow('image',gray)
-  #cv2.waitKey()
-  #asdfasdf
-  print(np.array(corners).shape)
-  print(np.array(locations).shape)
-
-  #Determine forward and backware transformation through homography
-  forward, status = cv2.findHomography(np.array(corners), np.array(locations))
-  backward, status = cv2.findHomography(np.array(locations), np.array(corners))
-  
-  im_out = cv2.warpPerspective(gray, forward, (int(800), int(1200)))
-  cv2.rectangle(im_out, (int(32.8125*7),int(32.8125*1)),(int(32.8125*8),int(32.8125*2)),(255,0,0),-1)
-
-  pixelsAtBed = pixel_loc_at_cnc_bed(boxWidth, backward)
-  #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
-  line1 = tuple(pixelsAtBed[0][0].astype(np.int))
-  line2   = tuple(pixelsAtBed[1][0].astype(np.int))
-  line3   = tuple(pixelsAtBed[2][0].astype(np.int))
-  line4   = tuple(pixelsAtBed[3][0].astype(np.int))
-  print(line1)
-  print(line2)
-  print(line3)
-  print(line4)
-  cv2.line(gray, line1,line2,(125,0,0),3)
-  cv2.line(gray, line2,line3,(155,0,0),3)
-  cv2.line(gray, line3,line4,(155,0,0),3)
-  cv2.line(gray, line4,line1,(155,0,0),3)
+    pixelsAtBed[i] = pixel_loc_at_cnc_bed(boxWidth, physicalToPixelLoc[i])
+    #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
+    line1 = tuple(pixelsAtBed[i][0][0].astype(np.int))
+    line2   = tuple(pixelsAtBed[i][1][0].astype(np.int))
+    line3   = tuple(pixelsAtBed[i][2][0].astype(np.int))
+    line4   = tuple(pixelsAtBed[i][3][0].astype(np.int))
+    cv2.line(gray, line1,line2,(125,0,0),3)
+    cv2.line(gray, line2,line3,(155,0,0),3)
+    cv2.line(gray, line3,line4,(155,0,0),3)
+    cv2.line(gray, line4,line1,(155,0,0),3)
 
   
-  cv2.imshow('dst',im_out)
+  #cv2.imshow('dst',im_out)
   gray = cv2.resize(gray, (1280, 800))
-  
   cv2.imshow('image',gray)
   cv2.waitKey()
-  #gray = blackWhite
-  print(gray.shape)
   
   #######################################################################
   # filter out noise
