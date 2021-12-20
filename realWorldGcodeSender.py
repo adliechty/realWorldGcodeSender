@@ -338,10 +338,10 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
   pointList = []
   locations = []
   for box, ID in zip(boxes, ids):
-    #IDs above 33 are on right side, skip those if looking for left side points
-    if rightSide == False and ID >= 33:
+    #IDs below 33 are on right side, skip those if looking for left side points
+    if rightSide == False and ID < 33:
       continue
-    elif rightSide == True and ID < 33:
+    elif rightSide == True and ID >= 33:
       continue
     boxLoc = idToLoc(ID[0])
     for boxPoints in box:
@@ -374,18 +374,18 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
         # Generate point location based on boxWidth and index within box
         ############################################
         curLoc = [0,0]
-        if i == 0:
+        if (i == 0 and rightSide) or (i == 3 and not rightSide):
+          curLoc[0] = boxLoc[0] + 1
+          curLoc[1] = boxLoc[1] + 1
+        elif (i ==1 and rightSide) or (i == 2 and not rightSide):
+          curLoc[0] = boxLoc[0] + 1
+          curLoc[1] = boxLoc[1] + 0
+        elif (i == 2 and rightSide) or (i == 1 and not rightSide):
           curLoc[0] = boxLoc[0] + 0
           curLoc[1] = boxLoc[1] + 0
-        elif i ==1:
-          curLoc[0] = boxLoc[0] + 0
-          curLoc[1] = boxLoc[1] - 1
-        elif i == 2:
-          curLoc[0] = boxLoc[0] - 1
-          curLoc[1] = boxLoc[1] - 1
         else:
-          curLoc[0] = boxLoc[0] - 1
-          curLoc[1] = boxLoc[1] + 0
+          curLoc[0] = boxLoc[0] + 0
+          curLoc[1] = boxLoc[1] + 1
         curLoc[0] = curLoc[0] * boxWidth
         curLoc[1] = curLoc[1] * boxWidth
         locations.append(curLoc)
@@ -429,7 +429,8 @@ def generate_dest_locations(boxWidth, corners, image):
   return locations, image
 
 def pixel_loc_at_cnc_bed(boxWidth, backward):
-  return cv2.perspectiveTransform(np.array([[0,boxWidth*22],[boxWidth*8,boxWidth*22],[boxWidth * 8,-boxWidth*22],[0,-boxWidth*22]]).reshape(-1,1,2), backward)
+  return                          np.array([[0,0],[-boxWidth*8,0],[-boxWidth * 8,boxWidth*44],[0,boxWidth*44]]), \
+         cv2.perspectiveTransform(np.array([[0,0],[-boxWidth*8,0],[-boxWidth * 8,boxWidth*44],[0,boxWidth*44]]).reshape(-1,1,2), backward)
 
 
 #############################################################################
@@ -483,6 +484,7 @@ while len(contours) != 8:
   pixelToPhysicalLoc = [None]*2
   physicalToPixelLoc = [None]*2
   pixelsAtBed = [None]*2
+  refPointsAtBed = [None]*2
 
   for i in range(0, 2):
     pixelLoc[i],  locations[i],  gray = boxes_to_point_and_location_list(boxes, ids, boxWidth, gray, i == 1)
@@ -496,7 +498,8 @@ while len(contours) != 8:
     #im_out = cv2.warpPerspective(gray, forward, (int(800), int(600)))
     #cv2.rectangle(im_out, (int(32.8125*7),int(32.8125*1)),(int(32.8125*8),int(32.8125*2)),(255,0,0),-1)
 
-    pixelsAtBed[i] = pixel_loc_at_cnc_bed(boxWidth, physicalToPixelLoc[i])
+    refPointsAtBed[i], pixelsAtBed[i] = pixel_loc_at_cnc_bed(boxWidth, physicalToPixelLoc[i])
+
     #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
     line1 = tuple(pixelsAtBed[i][0][0].astype(np.int))
     line2   = tuple(pixelsAtBed[i][1][0].astype(np.int))
@@ -507,9 +510,31 @@ while len(contours) != 8:
     cv2.line(gray, line3,line4,(155,0,0),3)
     cv2.line(gray, line4,line1,(155,0,0),3)
 
+  refPoints = np.array([[0,0],[0,-boxWidth*44],[-boxWidth*44,0],[-boxWidth*44,-boxWidth*44]])
+  refPixels = np.array([pixelsAtBed[0][1],pixelsAtBed[0][2],pixelsAtBed[1][1],pixelsAtBed[1][2]])
+  print()
+  print()
+  print()
+  print()
+  print(refPixels)
+  print(refPoints)
+  bedPhysicalToPixelLoc, status    = cv2.findHomography(refPoints, refPixels)
+  bedPixelToPhysicalLoc, status    = cv2.findHomography(refPixels, refPoints)
+  print(bedPhysicalToPixelLoc)
+  
+  pixels = cv2.perspectiveTransform(np.array([[0,0],[-boxWidth*44,0],[-boxWidth * 44,-boxWidth*44],[0,-boxWidth*44]]).reshape(-1,1,2), bedPhysicalToPixelLoc)
+  line1 = tuple(pixels[0][0].astype(np.int))
+  line2   = tuple(pixels[1][0].astype(np.int))
+  line3   = tuple(pixels[2][0].astype(np.int))
+  line4   = tuple(pixels[3][0].astype(np.int))
+  cv2.line(gray, line1,line2,(125,0,0),3)
+  cv2.line(gray, line2,line3,(155,0,0),3)
+  cv2.line(gray, line3,line4,(155,0,0),3)
+  cv2.line(gray, line4,line1,(155,0,0),3)
+
   
   #cv2.imshow('dst',im_out)
-  gray = cv2.resize(gray, (1280, 800))
+  gray = cv2.resize(gray, (1280, 700))
   cv2.imshow('image',gray)
   cv2.waitKey()
   
