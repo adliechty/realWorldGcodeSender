@@ -20,15 +20,8 @@ global yOffset
 yOffset = 0
 global rotation
 rotation = 0
-global output
-global origin
-global xVector
-global yVector
-global xVectorNorm
-global yVectorNorm
+global cv2Overhead
 global matPlotImage
-global xPixelPerMm
-global yPixelPerMm
 
 global pixelToMmTransformMatrix
 
@@ -115,7 +108,6 @@ def mm_to_pixel_tuple(a, b):
 
 def overlaySvg(image, xOff = 0, yOff = 0):
   overlay = image.copy()
-  origin = (0,0)
   cv2.line(overlay, (0,0), (400, 0), (0,0,255), 3)
 
   cv2.line(overlay, (0,0), (0, 400), (0,0,255), 3)
@@ -128,9 +120,9 @@ def overlaySvg(image, xOff = 0, yOff = 0):
     offsetPoints(points, xOff * 25.4, yOff * 25.4)
     prevPoint = None
     for point in points:
-      newPoint = (int(point.X/2), int(point.Y/2))
+      newPoint = (int(point.X), int(point.Y))
       if prevPoint is not None:
-        cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 3)
+        cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 1)
       prevPoint = newPoint
 
   return overlay
@@ -138,45 +130,55 @@ def overlaySvg(image, xOff = 0, yOff = 0):
 def updateXOffset(text):
   global xOffset
   global yOffset
-  global output
+  global cv2Overhead
+  if xOffset == float(text):
+    return
   xOffset = float(text)
-  overlay = overlaySvg2(output, pixelToMmTransformMatrix, xOffset, yOffset)
+  overlay = overlaySvg(cv2Overhead, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-  print("inX: " + str(xOffset))
-  print("Y: " + str(yOffset))
+  matPlotImage.figure.canvas.draw()
+  print("updateX")
   
 def updateYOffset(text):
   global xOffset
   global yOffset
-  global output
+  global cv2Overhead
+  if yOffset == float(text):
+    return
   yOffset = float(text)
-  overlay = overlaySvg2(output, pixelToMmTransformMatrix, xOffset, yOffset)
+  overlay = overlaySvg(cv2Overhead, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-  print("X: " + str(xOffset))
-  print("inY: " + str(yOffset))
+  matPlotImage.figure.canvas.draw()
+  print("updateY")
 
 def updateRotation(text):
   rotation = float(rotation)
 
 def onclick(event):
-  global origin
-  global xVectorNorm
-  global yVectorNorm
-  global xPixelPerMm  
-  global yPixelPerMm
-  global output
+  global cv2Overhead
+  global matPlotImage
+  global xBox
+  global yBox
+  global xOffset
+  global yOffset
 
+  if event.y < 100:
+    return
   #print(str(event.xdata) + " " + str(event.ydata))
-  #print("     " + str(origin))
-  #X is mirrored for matplotlib, so do origin - x for X.
-  pixelsToOrigin = np.array([[event.xdata - origin[0]], [event.ydata - origin[1]]])
+  pixelsToOrigin = np.array([event.xdata, event.ydata])
   #print("  newPointIn " + str(newPointIn))
   #print("      " + str(newPointIn[0][0]))
   #print("      " + str(newPointIn[1][0]))
+  print("pixelsToOrigin: " + str(pixelsToOrigin))
   
-
-  overlay = overlaySvg(output, pixelToMmTransformMatrix, pixelsToOrigin[0] / 25.4, pixelsToOrigin[1] / 25.4)
+  xOffset = pixelsToOrigin[0] / 25.4
+  yOffset = pixelsToOrigin[1] / 25.4
+  overlay = overlaySvg(cv2Overhead, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+  matPlotImage.figure.canvas.draw()
+  xBox.set_val(str(xOffset))
+  yBox.set_val(str(yOffset))
+  print("click")
 
 def crop_half_vertically(img):
   #cropped_img = image[,int(image.shape[1]/2):int(image.shape[1])]
@@ -399,9 +401,10 @@ boxWidth = 32.8125
 frame = cv2.imread('cnc3.jpeg')
 img = cv2.imread('cnc3.jpeg')
 
-# load the image, clone it for output, and then convert it to grayscale
+# load the image, clone it for cv2Overhead, and then convert it to grayscale
       
-output = frame.copy()
+global cv2Overhead
+cv2Overhead = frame.copy()
   
 #######################################################################
 # Get grayscale image above threshold
@@ -485,8 +488,8 @@ cv2.waitKey()
 #############################################################
 # Warp perspective to perpendicular to bed view
 #############################################################
-im_out = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (int(1280), int(700)))
-overlay = overlaySvg(im_out)
+cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (int(1280), int(700)))
+overlay = overlaySvg(cv2Overhead)
 
 fig, ax = plt.subplots()
 fig.tight_layout()
@@ -494,10 +497,12 @@ plt.subplots_adjust(bottom=0.2)
 plt.axis([1280,0, 0, 800])
 matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 xAxes = plt.axes([0.2, 0.1, 0.2, 0.04])
+global xBox
 xBox = TextBox(xAxes, "xOffset (in)", initial="0")
 xBox.on_submit(updateXOffset)
 
 yAxes = plt.axes([0.7, 0.1, 0.2, 0.04])
+global yBox
 yBox = TextBox(yAxes, "yOffset (in)", initial="0")
 yBox.on_submit(updateYOffset)
 
