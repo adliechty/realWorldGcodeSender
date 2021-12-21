@@ -1,3 +1,5 @@
+#TODO:  use interpolateCornersCharuco to get better accuracy on corner detection
+
 # import the necessary packages
 import numpy as np
 import argparse
@@ -111,7 +113,7 @@ def mm_to_pixel_tuple(a, b):
   return(tuple(mm_to_pixel(a, b).astype(np.int)[0:2]))
 
 
-def overlaySvg3(image, xOff = 0, yOff = 0):
+def overlaySvg(image, xOff = 0, yOff = 0):
   overlay = image.copy()
   origin = (0,0)
   cv2.line(overlay, (0,0), (400, 0), (0,0,255), 3)
@@ -133,84 +135,10 @@ def overlaySvg3(image, xOff = 0, yOff = 0):
 
   return overlay
 
-def overlaySvg2(image, pixelToMmTransformMatrix, xOff = 0, yOff = 0):
-  overlay = image.copy()
-  print(mm_to_pixel_tuple((0,         0, 1), pixelToMmTransformMatrix))
-  print(mm_to_pixel_tuple((40 * 25.4, 0, 1), pixelToMmTransformMatrix))
-  origin = mm_to_pixel_tuple((0,         0, 1), pixelToMmTransformMatrix)
-  corner1 = mm_to_pixel_tuple((40 * 25.4, 0, 1), pixelToMmTransformMatrix)
-  print()
-  print(origin)
-  print()
-  print(corner1)
-  cv2.line(overlay, origin, corner1, (0,0,255), 3)
-
-  cv2.line(overlay, origin, \
-                    mm_to_pixel_tuple((0, 33.25 * 25.4,1), pixelToMmTransformMatrix), \
-                    (0,0,255), 3)
-
-  paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
-
-  for path in paths:
-    points = pathToPoints3D(path, 10)
-    #offset is in inches, convert to mm, which is what svg is in
-    offsetPoints(points, xOff * 25.4, yOff * 25.4)
-    prevPoint = None
-    for point in points:
-      newPoint = mm_to_pixel_tuple((point.X, point.Y, 1), pixelToMmTransformMatrix)
-      if prevPoint is not None:
-        cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 3)
-      prevPoint = newPoint
-
-  return overlay
-
-def overlaySvg(image, origin, xVector, yVector, xOff = 0, yOff = 0, xOffPixel = 0, yOffPixel = 0):
-  global xVectorNorm
-  global yVectorNorm
-  global xPixelPerMm
-  global yPixelPerMm
-  overlay = image.copy()
-  # 889mm between the dots, calculate number of pixels per mm
-  xLineEnd = origin + xVector
-  yLineEnd = origin + yVector
-  cv2.line(overlay, tuple(origin.astype(np.int)), tuple(xLineEnd.astype(np.int)), (0, 0, 255), 3)
-  cv2.line(overlay, tuple(origin.astype(np.int)), tuple(yLineEnd.astype(np.int)), (0, 255, 0), 3)
-  #33.25mm Y
-  #40mm X
-  xPixelPerMm = dist((0, 0), xVector) / (40 * 25.4)
-  yPixelPerMm = dist((0, 0), yVector) / (33.25 * 25.4)
-  pixelsPerInch = (xPixelPerMm + yPixelPerMm) / 2.0 * 25.4
-  print(xPixelPerMm)
-  print(yPixelPerMm)
-
-  xVectorNorm = [x / dist((0, 0), xVector) for x in xVector]
-  yVectorNorm = [y / dist((0, 0), yVector) for y in yVector]
-
-  paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
-  #paths, attributes, svg_attributes = svg2paths2("test.svg")
-  
-  for path in paths:
-    points = pathToPoints3D(path, 10)
-    #offset is in inches, convert to mm, which is what svg is in
-    offsetPoints(points, xOff * 25.4, yOff * 25.4)
-    scalePoints(points, xPixelPerMm, yPixelPerMm)
-    offsetPoints(points, xOffPixel, yOffPixel)
-    prevPoint = None
-    for point in points:
-      newPoint = origin + \
-                 np.matmul([[xVectorNorm[0], yVectorNorm[0]], \
-                            [xVectorNorm[1], yVectorNorm[1]]], \
-                            [point.X, point.Y])
-      #print(newPoint)
-      if prevPoint is not None:
-        cv2.line(overlay, tuple(prevPoint.astype(np.int)), tuple(newPoint.astype(np.int)), (255, 0, 0), int(pixelsPerInch * 0.25))
-      prevPoint = newPoint
-  return overlay
-      
-
 def updateXOffset(text):
   global xOffset
   global yOffset
+  global output
   xOffset = float(text)
   overlay = overlaySvg2(output, pixelToMmTransformMatrix, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
@@ -220,6 +148,7 @@ def updateXOffset(text):
 def updateYOffset(text):
   global xOffset
   global yOffset
+  global output
   yOffset = float(text)
   overlay = overlaySvg2(output, pixelToMmTransformMatrix, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
@@ -235,21 +164,18 @@ def onclick(event):
   global yVectorNorm
   global xPixelPerMm  
   global yPixelPerMm
+  global output
 
-  print(str(event.xdata) + " " + str(event.ydata))
-  print("     " + str(origin))
+  #print(str(event.xdata) + " " + str(event.ydata))
+  #print("     " + str(origin))
   #X is mirrored for matplotlib, so do origin - x for X.
   pixelsToOrigin = np.array([[event.xdata - origin[0]], [event.ydata - origin[1]]])
-  newPointPx = np.matmul(np.linalg.inv([[xVectorNorm[0], yVectorNorm[0]], \
-                                        [xVectorNorm[1], yVectorNorm[1]]]), pixelsToOrigin)
-  newPointIn = np.array([newPointPx[0] / xPixelPerMm / 25.4, \
-                         newPointPx[1] / yPixelPerMm / 25.4])
-  print("  newPointIn " + str(newPointIn))
-  print("      " + str(newPointIn[0][0]))
-  print("      " + str(newPointIn[1][0]))
+  #print("  newPointIn " + str(newPointIn))
+  #print("      " + str(newPointIn[0][0]))
+  #print("      " + str(newPointIn[1][0]))
   
 
-  overlay = overlaySvg2(output, pixelToMmTransformMatrix, newPointIn[0][0], newPointIn[1][0])
+  overlay = overlaySvg(output, pixelToMmTransformMatrix, pixelsToOrigin[0] / 25.4, pixelsToOrigin[1] / 25.4)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
 def crop_half_vertically(img):
@@ -334,6 +260,25 @@ idToLocDict = {0 :[2,21],
 def idToLoc(ID):
   return idToLocDict[ID]
 
+def sortBoxPoints(points, rightSide):
+  #First sort by X
+  sortedX = sorted(points , key=lambda k: [k[0]])
+  #Then sorty by Y left and right most two X set of points
+  rightTwoPoints = sorted(sortedX[2:], key=lambda k: [k[1]])
+  leftTwoPoints  = sorted(sortedX[0:2], key=lambda k: [k[1]])
+  if rightSide:
+    minZminY = leftTwoPoints[1]
+    minZmaxY = leftTwoPoints[0]
+    maxZmaxY = rightTwoPoints[0]
+    maxZminY = rightTwoPoints[1]
+  else:
+    minZminY = rightTwoPoints[1]
+    minZmaxY = rightTwoPoints[0]
+    maxZmaxY = leftTwoPoints[0]
+    maxZminY = leftTwoPoints[1]
+    
+  return [minZminY, minZmaxY, maxZmaxY, maxZminY]
+
 def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = False):
   pointList = []
   locations = []
@@ -352,7 +297,7 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
       font                   = cv2.FONT_HERSHEY_SIMPLEX
       bottomLeftCornerOfText = prevX + 100,prevY
       fontScale              = 1
-      fontColor              = (125,135,125)
+      fontColor              = (0,255,255)
       thickness              = 3
       lineType               = 2
 
@@ -363,7 +308,9 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
           fontColor,
           thickness,
           lineType)
-      for point in boxPoints:
+
+      boxPointsSorted = sortBoxPoints(boxPoints, rightSide)
+      for point in boxPointsSorted:
         ############################################
         # Generate list of points
         ############################################
@@ -374,18 +321,18 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
         # Generate point location based on boxWidth and index within box
         ############################################
         curLoc = [0,0]
-        if (i == 0 and rightSide) or (i == 3 and not rightSide):
-          curLoc[0] = boxLoc[0] + 1
-          curLoc[1] = boxLoc[1] + 1
-        elif (i ==1 and rightSide) or (i == 2 and not rightSide):
-          curLoc[0] = boxLoc[0] + 1
-          curLoc[1] = boxLoc[1] + 0
-        elif (i == 2 and rightSide) or (i == 1 and not rightSide):
+        if i == 0:
           curLoc[0] = boxLoc[0] + 0
           curLoc[1] = boxLoc[1] + 0
+        elif i ==1:
+          curLoc[0] = boxLoc[0] + 0
+          curLoc[1] = boxLoc[1] + 1
+        elif i == 2:
+          curLoc[0] = boxLoc[0] + 1
+          curLoc[1] = boxLoc[1] + 1
         else:
-          curLoc[0] = boxLoc[0] + 0
-          curLoc[1] = boxLoc[1] + 1
+          curLoc[0] = boxLoc[0] + 1
+          curLoc[1] = boxLoc[1] + 0
         curLoc[0] = curLoc[0] * boxWidth
         curLoc[1] = curLoc[1] * boxWidth
         locations.append(curLoc)
@@ -396,7 +343,7 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
         x= int(point[0])
         y= int(point[1])
         image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
-                                (100,0,0), 5)
+                                (0,255,255), 5)
 
         prevX = x
         prevY = y
@@ -460,13 +407,9 @@ output = frame.copy()
 # Get grayscale image above threshold
 #######################################################################
 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-#gray = cv2.resize(gray, (1280, 1000))
-#gray1,gray2 = crop_half_vertically(gray)
-#gray = gray1
-#gray = cv2.resize(gray, (int(sys.argv[1]), int(sys.argv[2])))
 
 ########################################
-# Get arco box information
+# Get aruco box information
 ########################################
 boxes, ids, rejectedImgPoints = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_100))
 print("boxes")
@@ -485,8 +428,7 @@ pixelsAtBed = [None]*2
 refPointsAtBed = [None]*2
 
 for i in range(0, 2):
-# try:
-  pixelLoc[i],  locations[i],  gray = boxes_to_point_and_location_list(boxes, ids, boxWidth, gray, i == 1)
+  pixelLoc[i],  locations[i],  frame = boxes_to_point_and_location_list(boxes, ids, boxWidth, frame, i == 1)
   print(locations[i])
 
   ########################################
@@ -507,42 +449,44 @@ for i in range(0, 2):
   line2   = tuple(pixelsAtBed[i][1][0].astype(np.int))
   line3   = tuple(pixelsAtBed[i][2][0].astype(np.int))
   line4   = tuple(pixelsAtBed[i][3][0].astype(np.int))
-  cv2.line(gray, line1,line2,(125,0,0),3)
-  cv2.line(gray, line2,line3,(155,0,0),3)
-  cv2.line(gray, line3,line4,(155,0,0),3)
-  cv2.line(gray, line4,line1,(155,0,0),3)
-# except:
-#  pass
-#gray = cv2.resize(gray, (1280, 700))
-#cv2.imshow('image',gray)
-#cv2.waitKey()
-#############################################################
-# Draw box on CNC bed
-#############################################################
+  cv2.line(frame, line1,line2,(0,255,255),3)
+  cv2.line(frame, line2,line3,(0,255,255),3)
+  cv2.line(frame, line3,line4,(0,255,255),3)
+  cv2.line(frame, line4,line1,(0,255,255),3)
+
+##########################################################################
+# Get forward and backward homography from bed location to pixel location
+##########################################################################
 bedPixelCorners = np.array([[1280.0,0.0],[1280.0,700.0],[0.0,0.0],[0.0,700.0]])
 refPixels = np.array([pixelsAtBed[0][1],pixelsAtBed[0][2],pixelsAtBed[1][1],pixelsAtBed[1][2]])
 bedPhysicalToPixelLoc, status    = cv2.findHomography(bedPixelCorners, refPixels)
 bedPixelToPhysicalLoc, status    = cv2.findHomography(refPixels, bedPixelCorners)
-print(bedPhysicalToPixelLoc)
   
+#############################################################
+# Draw box on CNC bed
+#############################################################
 pixels = cv2.perspectiveTransform(bedPixelCorners.reshape(-1,1,2), bedPhysicalToPixelLoc)
 line1 = tuple(pixels[0][0].astype(np.int))
 line2   = tuple(pixels[1][0].astype(np.int))
 line3   = tuple(pixels[3][0].astype(np.int))
 line4   = tuple(pixels[2][0].astype(np.int))
-cv2.line(gray, line1,line2,(125,0,0),3)
-cv2.line(gray, line2,line3,(155,0,0),3)
-cv2.line(gray, line3,line4,(155,0,0),3)
-cv2.line(gray, line4,line1,(155,0,0),3)
+cv2.line(frame, line1,line2,(0,255,255),3)
+cv2.line(frame, line2,line3,(0,255,255),3)
+cv2.line(frame, line3,line4,(0,255,255),3)
+cv2.line(frame, line4,line1,(0,255,255),3)
 
+#############################################################
+# Display bed on original image
+#############################################################
+gray = cv2.resize(frame, (1280, 700))
+cv2.imshow('image',gray)
+cv2.waitKey()
   
-im_out = cv2.warpPerspective(gray, bedPixelToPhysicalLoc, (int(1280), int(700)))
-#gray = cv2.resize(gray, (1280, 700))
-#cv2.imshow('image',gray)
-#cv2.waitKey()
-
-overlay = overlaySvg3(im_out)
-
+#############################################################
+# Warp perspective to perpendicular to bed view
+#############################################################
+im_out = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (int(1280), int(700)))
+overlay = overlaySvg(im_out)
 
 fig, ax = plt.subplots()
 fig.tight_layout()
