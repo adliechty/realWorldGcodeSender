@@ -13,24 +13,6 @@ from matplotlib.widgets import TextBox
 
 import sys
 
-
-global xOffset
-xOffset = 0
-global yOffset
-yOffset = 0
-global rotation
-rotation = 0
-global cv2Overhead
-global matPlotImage
-
-global pixelToMmTransformMatrix
-
-####################################################################################
-# SHould put these in a shared libary
-####################################################################################
-def distanceXY(p1, p2):
-  return ((p1.X - p2.X)**2 + (p1.Y - p2.Y)**2)**0.5
-
 class Point3D:
   def __init__(self, X, Y, Z = None):
     self.X = X
@@ -44,6 +26,33 @@ class Point3D:
     return str("(" + str(self.X) + "," + str(self.Y) + "," + str(self.Z) + ")")
   def __repr__(self):
     return str("(" + str(self.X) + "," + str(self.Y) + "," + str(self.Z) + ")")
+
+global boxWidth 
+global rightBoxRef
+global leftBoxRef
+global bedSize
+
+boxWidth = 32.00
+#These are distances from machine origin (0,0,0), right, back, upper corner.
+rightBoxRef = Point3D(2.0, -35.0, 1.0)
+leftBoxRef = Point3D(-37.0, -35.0, 1.0)
+bedSize = Point3D(-35.0, 035.0, -3.75)
+
+global xOffset
+xOffset = 0
+global yOffset
+yOffset = 0
+global rotation
+rotation = 0
+global cv2Overhead
+global matPlotImage
+
+####################################################################################
+# Should put these in a shared libary
+####################################################################################
+def distanceXY(p1, p2):
+  return ((p1.X - p2.X)**2 + (p1.Y - p2.Y)**2)**0.5
+
 
 def lineOrCurveToPoints3D(lineOrCurve, pointsPerCurve):
   if isinstance(lineOrCurve,Line):
@@ -101,10 +110,6 @@ def offsetPoints(points, X, Y):
   for point in points:
     point.X = point.X + X
     point.Y = point.Y + Y
-
-def mm_to_pixel_tuple(a, b):
-  return(tuple(mm_to_pixel(a, b).astype(np.int)[0:2]))
-
 
 def overlaySvg(image, xOff = 0, yOff = 0):
   overlay = image.copy()
@@ -281,7 +286,8 @@ def sortBoxPoints(points, rightSide):
     
   return [minZminY, minZmaxY, maxZmaxY, maxZminY]
 
-def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = False):
+def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
+  global boxWidth
   pointList = []
   locations = []
   for box, ID in zip(boxes, ids):
@@ -353,7 +359,8 @@ def boxes_to_point_and_location_list(boxes, ids, boxWidth, image, rightSide = Fa
         
   return np.array(pointList), locations, image
 
-def generate_dest_locations(boxWidth, corners, image):
+def generate_dest_locations(corners, image):
+  global boxWidth
   prevX=2000
   prevY=2000
   locations = []
@@ -377,7 +384,8 @@ def generate_dest_locations(boxWidth, corners, image):
     prevY = y
   return locations, image
 
-def pixel_loc_at_cnc_bed(boxWidth, backward):
+def pixel_loc_at_cnc_bed(backward):
+  global boxWidth
   return                          np.array([[0,0],[-boxWidth*8,0],[-boxWidth * 8,boxWidth*34],[0,boxWidth*34]]), \
          cv2.perspectiveTransform(np.array([[0,0],[-boxWidth*8,0],[-boxWidth * 8,boxWidth*34],[0,boxWidth*34]]).reshape(-1,1,2), backward)
 
@@ -397,9 +405,9 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-boxWidth = 32.8125
 frame = cv2.imread('cnc3.jpeg')
 img = cv2.imread('cnc3.jpeg')
+
 
 # load the image, clone it for cv2Overhead, and then convert it to grayscale
       
@@ -431,7 +439,7 @@ pixelsAtBed = [None]*2
 refPointsAtBed = [None]*2
 
 for i in range(0, 2):
-  pixelLoc[i],  locations[i],  frame = boxes_to_point_and_location_list(boxes, ids, boxWidth, frame, i == 1)
+  pixelLoc[i],  locations[i],  frame = boxes_to_point_and_location_list(boxes, ids, frame, i == 1)
   print(locations[i])
 
   ########################################
@@ -445,7 +453,7 @@ for i in range(0, 2):
   #############################################################
   # Draw vertical box on left and right vertical region of CNC
   #############################################################
-  refPointsAtBed[i], pixelsAtBed[i] = pixel_loc_at_cnc_bed(boxWidth, physicalToPixelLoc[i])
+  refPointsAtBed[i], pixelsAtBed[i] = pixel_loc_at_cnc_bed(physicalToPixelLoc[i])
 
   #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
   line1 = tuple(pixelsAtBed[i][0][0].astype(np.int))
@@ -460,7 +468,7 @@ for i in range(0, 2):
 ##########################################################################
 # Get forward and backward homography from bed location to pixel location
 ##########################################################################
-bedPixelCorners = np.array([[1280.0,0.0],[1280.0,700.0],[0.0,0.0],[0.0,700.0]])
+bedPixelCorners = np.array([[float(frame.shape[1]),0.0],[float(frame.shape[1]),float(frame.shape[0])],[0.0,0.0],[0.0,float(frame.shape[0])]])
 refPixels = np.array([pixelsAtBed[0][1],pixelsAtBed[0][2],pixelsAtBed[1][1],pixelsAtBed[1][2]])
 bedPhysicalToPixelLoc, status    = cv2.findHomography(bedPixelCorners, refPixels)
 bedPixelToPhysicalLoc, status    = cv2.findHomography(refPixels, bedPixelCorners)
@@ -488,13 +496,13 @@ cv2.waitKey()
 #############################################################
 # Warp perspective to perpendicular to bed view
 #############################################################
-cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (int(1280), int(700)))
+cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 overlay = overlaySvg(cv2Overhead)
 
 fig, ax = plt.subplots()
 fig.tight_layout()
 plt.subplots_adjust(bottom=0.2)
-plt.axis([1280,0, 0, 800])
+plt.axis([frame.shape[1],0, 0, frame.shape[0]])
 matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 xAxes = plt.axes([0.2, 0.1, 0.2, 0.04])
 global xBox
