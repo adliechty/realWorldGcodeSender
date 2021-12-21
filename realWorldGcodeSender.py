@@ -32,11 +32,11 @@ global rightBoxRef
 global leftBoxRef
 global bedSize
 
-boxWidth = 32.00
+boxWidth = 1.25
 #These are distances from machine origin (0,0,0), right, back, upper corner.
 rightBoxRef = Point3D(2.0, -35.0, 1.0)
 leftBoxRef = Point3D(-37.0, -35.0, 1.0)
-bedSize = Point3D(-35.0, 035.0, -3.75)
+bedSize = Point3D(-35.0, -35.0, -3.75)
 
 global xOffset
 xOffset = 0
@@ -264,9 +264,6 @@ idToLocDict = {0 :[2,21],
                64:[2,   2],
                65:[2,   0]}
 
-def idToLoc(ID):
-  return idToLocDict[ID]
-
 def sortBoxPoints(points, rightSide):
   #First sort by X
   sortedX = sorted(points , key=lambda k: [k[0]])
@@ -296,7 +293,7 @@ def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
       continue
     elif rightSide == True and ID >= 33:
       continue
-    boxLoc = idToLoc(ID[0])
+    boxLoc = idToLocDict[ID[0]]
     for boxPoints in box:
       prevX = int(boxPoints[0][0])
       prevY = int(boxPoints[0][1])
@@ -341,8 +338,12 @@ def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
         else:
           curLoc[0] = boxLoc[0] + 1
           curLoc[1] = boxLoc[1] + 0
-        curLoc[0] = curLoc[0] * boxWidth
-        curLoc[1] = curLoc[1] * boxWidth
+        if rightSide:
+          curLoc[0] = curLoc[0] * boxWidth + rightBoxRef.Z
+          curLoc[1] = curLoc[1] * boxWidth + rightBoxRef.Y
+        else:
+          curLoc[0] = curLoc[0] * boxWidth + leftBoxRef.Z
+          curLoc[1] = curLoc[1] * boxWidth + leftBoxRef.Y
         locations.append(curLoc)
 
         ############################################
@@ -384,10 +385,11 @@ def generate_dest_locations(corners, image):
     prevY = y
   return locations, image
 
-def pixel_loc_at_cnc_bed(backward):
+def pixel_loc_at_cnc_bed(phyToPixel):
   global boxWidth
-  return                          np.array([[0,0],[-boxWidth*8,0],[-boxWidth * 8,boxWidth*34],[0,boxWidth*34]]), \
-         cv2.perspectiveTransform(np.array([[0,0],[-boxWidth*8,0],[-boxWidth * 8,boxWidth*34],[0,boxWidth*34]]).reshape(-1,1,2), backward)
+  points = np.array([[0,0],[bedSize.Z,0],[bedSize.Z,bedSize.Y],[0,bedSize.Y]])
+  return points, \
+         cv2.perspectiveTransform(points.reshape(-1,1,2), phyToPixel)
 
 
 #############################################################################
@@ -428,9 +430,6 @@ print(boxes)
 print("ids")
 print(ids)
 
-########################################
-# Transform output into list of points and physical locations of those points
-########################################
 pixelLoc = [None]*2
 locations = [None]*2
 pixelToPhysicalLoc = [None]*2
@@ -438,17 +437,20 @@ physicalToPixelLoc = [None]*2
 pixelsAtBed = [None]*2
 refPointsAtBed = [None]*2
 
+########################################
+# Determine vertical homography at left (i=0) and right (i=1) side of CNC machine
+########################################
 for i in range(0, 2):
   pixelLoc[i],  locations[i],  frame = boxes_to_point_and_location_list(boxes, ids, frame, i == 1)
-  print(locations[i])
+  print(ids)
+  for location in locations[i]:
+    print(location)
 
   ########################################
   #Determine forward and backward transformation through homography
   ########################################
   pixelToPhysicalLoc[i], status = cv2.findHomography(np.array(pixelLoc[i]), np.array(locations[i]))
   physicalToPixelLoc[i], status    = cv2.findHomography(np.array(locations[i]), np.array(pixelLoc[i]))
-  #im_out = cv2.warpPerspective(gray, forward, (int(800), int(600)))
-  #cv2.rectangle(im_out, (int(32.8125*7),int(32.8125*1)),(int(32.8125*8),int(32.8125*2)),(255,0,0),-1)
 
   #############################################################
   # Draw vertical box on left and right vertical region of CNC
