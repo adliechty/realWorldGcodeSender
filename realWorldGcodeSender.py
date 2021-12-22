@@ -31,12 +31,89 @@ global boxWidth
 global rightBoxRef
 global leftBoxRef
 global bedSize
+global bedViewSizePixels
+
 
 boxWidth = 1.25
 #These are distances from machine origin (0,0,0), right, back, upper corner.
 rightBoxRef = Point3D(2.0, -35.0, 1.0)
 leftBoxRef = Point3D(-37.0, -35.0, 1.0)
 bedSize = Point3D(-35.0, -35.0, -3.75)
+bedViewSizePixels = 1400
+
+
+
+#First ID is upper right, which is most positive Z and most positice Y
+# Z, Y
+global idToLocDict
+idToLocDict = {0 :[2,21],
+               1 :[2,19],
+               2 :[2,17],
+               3 :[2,16],
+               4 :[2,13],
+               5 :[2,11],
+               6 :[2, 9],
+               7 :[2, 7],
+               8 :[2, 5],
+               9 :[2, 3],
+               10:[2, 1],
+               11:[1, 20],
+               12:[1, 18],
+               13:[1, 16],
+               14:[1, 14],
+               15:[1, 12],
+               16:[1, 10],
+               17:[1,  8],
+               18:[1,  6],
+               19:[1,  4],
+               20:[1,  2],
+               21:[1,  0],
+               22:[0,  21],
+               23:[0,  19],
+               24:[0,  17],
+               25:[0,  15],
+               26:[0,  13],
+               27:[0,  11],
+               28:[0,   9],
+               29:[0,   7],
+               30:[0,   5],
+               31:[0,   3],
+               32:[0,   1],
+               33:[0,  20],
+               34:[0,  18],
+               35:[0,  16],
+               36:[0,  14],
+               37:[0,  12],
+               38:[0,  10],
+               39:[0,   8],
+               40:[0,   6],
+               41:[0,   4],
+               42:[0,   2],
+               43:[0,   0],
+               44:[1,  21],
+               45:[1,  19],
+               46:[1,  17],
+               47:[1,  15],
+               48:[1,  13],
+               49:[1,  11],
+               50:[1,   9],
+               51:[1,   7],
+               52:[1,   5],
+               53:[1,   3],
+               54:[1,   1],
+               55:[2,  20],
+               56:[2,  18],
+               57:[2,  16],
+               58:[2,  14],
+               59:[2,  12],
+               60:[2,  10],
+               61:[2,   8],
+               62:[2,   6],
+               63:[2,   4],
+               64:[2,   2],
+               65:[2,   0]}
+
+
 
 global xOffset
 xOffset = 0
@@ -46,6 +123,8 @@ global rotation
 rotation = 0
 global cv2Overhead
 global matPlotImage
+global move
+move = False
 
 ####################################################################################
 # Should put these in a shared libary
@@ -121,8 +200,12 @@ def overlaySvg(image, xOff = 0, yOff = 0):
 
   for path in paths:
     points = pathToPoints3D(path, 10)
-    #offset is in inches, convert to mm, which is what svg is in
-    offsetPoints(points, xOff * 25.4, yOff * 25.4)
+    #First scale mm to inches
+    scalePoints(points, 1 / 25.4, 1 / 25.4)
+    #Then apply an offset in inches
+    offsetPoints(points, xOff, yOff)
+    #Then convert to pixel location
+    scalePoints(points, bedViewSizePixels / bedSize.X, bedViewSizePixels / bedSize.Y)
     prevPoint = None
     for point in points:
       newPoint = (int(point.X), int(point.Y))
@@ -159,15 +242,22 @@ def updateYOffset(text):
 def updateRotation(text):
   rotation = float(rotation)
 
+def onmove(event):
+  global move
+  move = True
 def onclick(event):
+  global move
+  move = False
+def onrelease(event):
   global cv2Overhead
   global matPlotImage
   global xBox
   global yBox
   global xOffset
   global yOffset
-
-  if event.y < 100:
+  global move
+  #If clicking outside region, or mouse moved since released then return
+  if event.y < 100 or move == True:
     return
   #print(str(event.xdata) + " " + str(event.ydata))
   pixelsToOrigin = np.array([event.xdata, event.ydata])
@@ -176,8 +266,9 @@ def onclick(event):
   #print("      " + str(newPointIn[1][0]))
   print("pixelsToOrigin: " + str(pixelsToOrigin))
   
-  xOffset = pixelsToOrigin[0] / 25.4
-  yOffset = pixelsToOrigin[1] / 25.4
+  xOffset = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
+  yOffset = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
+
   overlay = overlaySvg(cv2Overhead, xOffset, yOffset)
   matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
   matPlotImage.figure.canvas.draw()
@@ -195,74 +286,6 @@ def crop_half_vertically(img):
   right = img[:, width_cutoff:]
   return left, right
 
-#First ID is upper right, which is most positive Z and most positice Y
-# Z, Y
-idToLocDict = {0 :[2,21],
-               1 :[2,19],
-               2 :[2,17],
-               3 :[2,16],
-               4 :[2,13],
-               5 :[2,11],
-               6 :[2, 9],
-               7 :[2, 7],
-               8 :[2, 5],
-               9 :[2, 3],
-               10:[2, 1],
-               11:[1, 20],
-               12:[1, 18],
-               13:[1, 16],
-               14:[1, 14],
-               15:[1, 12],
-               16:[1, 10],
-               17:[1,  8],
-               18:[1,  6],
-               19:[1,  4],
-               20:[1,  2],
-               21:[1,  0],
-               22:[0,  21],
-               23:[0,  19],
-               24:[0,  17],
-               25:[0,  15],
-               26:[0,  13],
-               27:[0,  11],
-               28:[0,   9],
-               29:[0,   7],
-               30:[0,   5],
-               31:[0,   3],
-               32:[0,   1],
-               33:[0,  20],
-               34:[0,  18],
-               35:[0,  16],
-               36:[0,  14],
-               37:[0,  12],
-               38:[0,  10],
-               39:[0,   8],
-               40:[0,   6],
-               41:[0,   4],
-               42:[0,   2],
-               43:[0,   0],
-               44:[1,  21],
-               45:[1,  19],
-               46:[1,  17],
-               47:[1,  15],
-               48:[1,  13],
-               49:[1,  11],
-               50:[1,   9],
-               51:[1,   7],
-               52:[1,   5],
-               53:[1,   3],
-               54:[1,   1],
-               55:[2,  20],
-               56:[2,  18],
-               57:[2,  16],
-               58:[2,  14],
-               59:[2,  12],
-               60:[2,  10],
-               61:[2,   8],
-               62:[2,   6],
-               63:[2,   4],
-               64:[2,   2],
-               65:[2,   0]}
 
 def sortBoxPoints(points, rightSide):
   #First sort by X
@@ -285,6 +308,7 @@ def sortBoxPoints(points, rightSide):
 
 def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
   global boxWidth
+  global idToLocDict
   pointList = []
   locations = []
   for box, ID in zip(boxes, ids):
@@ -392,6 +416,19 @@ def pixel_loc_at_cnc_bed(phyToPixel):
          cv2.perspectiveTransform(points.reshape(-1,1,2), phyToPixel)
 
 
+def display_4_lines(pixels, frame, flip=False):
+  line1 = tuple(pixels[0][0].astype(np.int))
+  line2   = tuple(pixels[1][0].astype(np.int))
+  if flip:
+    line3   = tuple(pixels[3][0].astype(np.int))
+    line4   = tuple(pixels[2][0].astype(np.int))
+  else:
+    line3   = tuple(pixels[2][0].astype(np.int))
+    line4   = tuple(pixels[3][0].astype(np.int))
+  cv2.line(frame, line1,line2,(0,255,255),3)
+  cv2.line(frame, line2,line3,(0,255,255),3)
+  cv2.line(frame, line3,line4,(0,255,255),3)
+  cv2.line(frame, line4,line1,(0,255,255),3)
 #############################################################################
 # Main
 #############################################################################
@@ -456,16 +493,9 @@ for i in range(0, 2):
   # Draw vertical box on left and right vertical region of CNC
   #############################################################
   refPointsAtBed[i], pixelsAtBed[i] = pixel_loc_at_cnc_bed(physicalToPixelLoc[i])
+  display_4_lines(pixelsAtBed[i], frame)
 
   #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
-  line1 = tuple(pixelsAtBed[i][0][0].astype(np.int))
-  line2   = tuple(pixelsAtBed[i][1][0].astype(np.int))
-  line3   = tuple(pixelsAtBed[i][2][0].astype(np.int))
-  line4   = tuple(pixelsAtBed[i][3][0].astype(np.int))
-  cv2.line(frame, line1,line2,(0,255,255),3)
-  cv2.line(frame, line2,line3,(0,255,255),3)
-  cv2.line(frame, line3,line4,(0,255,255),3)
-  cv2.line(frame, line4,line1,(0,255,255),3)
 
 ##########################################################################
 # Get forward and backward homography from bed location to pixel location
@@ -479,14 +509,7 @@ bedPixelToPhysicalLoc, status    = cv2.findHomography(refPixels, bedPixelCorners
 # Draw box on CNC bed
 #############################################################
 pixels = cv2.perspectiveTransform(bedPixelCorners.reshape(-1,1,2), bedPhysicalToPixelLoc)
-line1 = tuple(pixels[0][0].astype(np.int))
-line2   = tuple(pixels[1][0].astype(np.int))
-line3   = tuple(pixels[3][0].astype(np.int))
-line4   = tuple(pixels[2][0].astype(np.int))
-cv2.line(frame, line1,line2,(0,255,255),3)
-cv2.line(frame, line2,line3,(0,255,255),3)
-cv2.line(frame, line3,line4,(0,255,255),3)
-cv2.line(frame, line4,line1,(0,255,255),3)
+display_4_lines(pixels, frame, flip=True)
 
 #############################################################
 # Display bed on original image
@@ -499,12 +522,13 @@ cv2.waitKey()
 # Warp perspective to perpendicular to bed view
 #############################################################
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
+cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
 overlay = overlaySvg(cv2Overhead)
 
 fig, ax = plt.subplots()
 fig.tight_layout()
 plt.subplots_adjust(bottom=0.2)
-plt.axis([frame.shape[1],0, 0, frame.shape[0]])
+plt.axis([bedViewSizePixels,0, bedViewSizePixels, 0])
 matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 xAxes = plt.axes([0.2, 0.1, 0.2, 0.04])
 global xBox
@@ -521,6 +545,8 @@ rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
 rBox.on_submit(updateRotation)
 
 cid = fig.canvas.mpl_connect('button_press_event', onclick)
+cid = fig.canvas.mpl_connect('button_release_event', onrelease)
+cid = fig.canvas.mpl_connect('motion_notify_event', onmove)
 
 plt.show()
 
