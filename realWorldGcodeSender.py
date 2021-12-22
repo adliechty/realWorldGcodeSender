@@ -170,22 +170,24 @@ def pathToPoints3D(path, pointsPerCurve):
 ####################################################################################
 class OverlayGcode:
     def __init__(self, cv2Overhead):
+        global bedViewSizePixels
+        global bedSize
+        
+        self.bedViewSizePixels = bedViewSizePixels
+        self.bedSize = bedSize
         self.xOffset = 0
         self.yOffset = 0
         self.rotation = 0
         self.cv2Overhead = cv2Overhead
         self.move = False
+        #Generate matplotlib plot from opencv image
 
-
-
-        self.matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-
-        #overlay = overlaySvg(cv2Overhead)
-
+        #return
         fig, ax = plt.subplots()
         fig.tight_layout()
         plt.subplots_adjust(bottom=0.01, right = 0.99)
-        plt.axis([bedViewSizePixels,0, bedViewSizePixels, 0])
+        plt.axis([self.bedViewSizePixels,0, self.bedViewSizePixels, 0])
+        self.matPlotImage = plt.imshow(cv2.cvtColor(self.cv2Overhead, cv2.COLOR_BGR2RGB))
 
         xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
         self.xBox = TextBox(xAxes, "xOffset (in)", initial="0")
@@ -215,24 +217,24 @@ class OverlayGcode:
         cid = fig.canvas.mpl_connect('button_release_event', self.onrelease)
         cid = fig.canvas.mpl_connect('motion_notify_event', self.onmove)
 
+        self.paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+        self.updateOverlay()
 
-        
-
-    def scalePoints(points, scaleX, scaleY):
+    def scalePoints(self, points, scaleX, scaleY):
       for point in points:
         point.X = point.X * scaleX
         point.Y = point.Y * scaleY
 
-    def offsetPoints(points, X, Y):
+    def offsetPoints(self, points, X, Y):
       for point in points:
         point.X = point.X + X
         point.Y = point.Y + Y
 
-    def rotatePoints(points, origin, angle):
+    def rotatePoints(self, points, origin, angle):
       for point in points:
-        point.X, point.Y = rotate(origin, [point.X, point.Y], angle)
+        point.X, point.Y = self.rotate(origin, [point.X, point.Y], angle)
 
-    def rotate(origin, point, angle):
+    def rotate(self, origin, point, angle):
         """
         Rotate a point counterclockwise by a given angle around a given origin.
 
@@ -245,7 +247,7 @@ class OverlayGcode:
         qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
         return qx, qy
 
-    def overlaySvg(image, xOff = 0, yOff = 0, rotation = 0):
+    def overlaySvg(self, image, xOff = 0, yOff = 0, rotation = 0):
       """
       image is opencv image
       xOff is in inches
@@ -255,83 +257,71 @@ class OverlayGcode:
       #convert to radians
       rotation = rotation * math.pi / 180
       overlay = image.copy()
-      cv2.line(overlay, (0,0), (400, 0), (0,0,255), 3)
 
-      cv2.line(overlay, (0,0), (0, 400), (0,0,255), 3)
-
-      paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
-
-      for path in paths:
+      for path in self.paths:
         points = pathToPoints3D(path, 10)
         #First scale mm to inches
-        scalePoints(points, 1 / 25.4, 1 / 25.4)
+        self.scalePoints(points, 1 / 25.4, 1 / 25.4)
         #Then apply an offset in inches
-        offsetPoints(points, xOff, yOff)
+        self.offsetPoints(points, xOff, yOff)
         #Then rotate
-        rotatePoints(points, [xOff, yOff], rotation)
+        self.rotatePoints(points, [xOff, yOff], rotation)
         #Then convert to pixel location
-        scalePoints(points, bedViewSizePixels / bedSize.X, bedViewSizePixels / bedSize.Y)
+        self.scalePoints(points, self.bedViewSizePixels / self.bedSize.X, self.bedViewSizePixels / self.bedSize.Y)
         prevPoint = None
         for point in points:
           newPoint = (int(point.X), int(point.Y))
           if prevPoint is not None:
             cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 1)
           prevPoint = newPoint
-
       return overlay
 
-    def onUpdateXOffset(text):
+    def updateOverlay(self):
+        overlay = self.overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
+        self.matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+        self.matPlotImage.figure.canvas.draw()
+
+    def onUpdateXOffset(self, text):
       if self.xOffset == float(text):
         return
       self.xOffset = float(text)
-      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
-      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-      matPlotImage.figure.canvas.draw()
+      self.updateOverlay()
       
-    def onUpdateYOffset(text):
+    def onUpdateYOffset(self, text):
       if self.yOffset == float(text):
         return
       self.yOffset = float(text)
-      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
-      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-      matPlotImage.figure.canvas.draw()
+      self.updateOverlay()
 
-    def onUpdateRotation(text):
+    def onUpdateRotation(self, text):
       if self.rotation == float(text):
         return
       self.rotation = float(text)
-      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
-      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-      matPlotImage.figure.canvas.draw()
+      self.updateOverlay()
 
-    def onmove(event):
-      global move
-      move = True
+    def onmove(self, event):
+      self.move = True
 
-    def onclick(event):
-      global move
-      move = False
+    def onclick(self, event):
+      self.move = False
 
-    def onrelease(event):
+    def onrelease(self, event):
       global matPlotImage
       #If clicking outside region, or mouse moved since released then return
       
-      if event.x < 260 or move == True:
+      if event.x < 260 or self.move == True:
         return
       pixelsToOrigin = np.array([event.xdata, event.ydata])
       if event.button == MouseButton.RIGHT:
-          xIn = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
-          yIn = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
+          xIn = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
+          yIn = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
           self.rotation = math.atan2(yIn - self.yOffset, xIn - self.xOffset)
           self.rotation = self.rotation * 180 / math.pi
 
       else:
-          self.xOffset = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
-          self.yOffset = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
-
-      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
-      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-      matPlotImage.figure.canvas.draw()
+          self.xOffset = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
+          self.yOffset = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
+      self.updateOverlay()
       self.xBox.set_val(str(self.xOffset))
       self.yBox.set_val(str(self.yOffset))
       self.rBox.set_val(str(self.rotation))
@@ -470,7 +460,7 @@ def generate_dest_locations(corners, image):
   return locations, image
 
 def pixel_loc_at_cnc_bed(phyToPixel):
-  global boxWidth
+  global bedSize
   points = np.array([[0,0],[bedSize.Z,0],[bedSize.Z,bedSize.Y],[0,bedSize.Y]])
   return points, \
          cv2.perspectiveTransform(points.reshape(-1,1,2), phyToPixel)
@@ -578,7 +568,6 @@ cv2.waitKey()
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
 GCodeOverlay = OverlayGcode(cv2Overhead)
-
 
 
 plt.show()
