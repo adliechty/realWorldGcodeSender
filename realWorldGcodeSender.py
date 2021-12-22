@@ -257,7 +257,7 @@ def onrelease(event):
   global yOffset
   global move
   #If clicking outside region, or mouse moved since released then return
-  if event.y < 100 or move == True:
+  if event.x < 260 or move == True:
     return
   #print(str(event.xdata) + " " + str(event.ydata))
   pixelsToOrigin = np.array([event.xdata, event.ydata])
@@ -527,21 +527,34 @@ overlay = overlaySvg(cv2Overhead)
 
 fig, ax = plt.subplots()
 fig.tight_layout()
-plt.subplots_adjust(bottom=0.2)
+plt.subplots_adjust(bottom=0.01, right = 0.99)
 plt.axis([bedViewSizePixels,0, bedViewSizePixels, 0])
 matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-xAxes = plt.axes([0.2, 0.1, 0.2, 0.04])
+
+xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
 global xBox
 xBox = TextBox(xAxes, "xOffset (in)", initial="0")
+label = xBox.ax.get_children()[1] # label is a child of the TextBox axis
+label.set_position([0.5,1]) # [x,y] - change here to set the position
+label.set_horizontalalignment('center')
+label.set_verticalalignment('bottom')
 xBox.on_submit(updateXOffset)
 
-yAxes = plt.axes([0.7, 0.1, 0.2, 0.04])
+yAxes = plt.axes([0.01, 0.7, 0.2, 0.04])
 global yBox
 yBox = TextBox(yAxes, "yOffset (in)", initial="0")
+label = yBox.ax.get_children()[1] # label is a child of the TextBox axis
+label.set_position([0.5,1]) # [x,y] - change here to set the position
+label.set_horizontalalignment('center')
+label.set_verticalalignment('bottom')
 yBox.on_submit(updateYOffset)
 
-rAxes = plt.axes([0.2, 0.01, 0.2, 0.04])
+rAxes = plt.axes([0.01, 0.6, 0.2, 0.04])
 rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
+label = rBox.ax.get_children()[1] # label is a child of the TextBox axis
+label.set_position([0.5,1]) # [x,y] - change here to set the position
+label.set_horizontalalignment('center')
+label.set_verticalalignment('bottom')
 rBox.on_submit(updateRotation)
 
 cid = fig.canvas.mpl_connect('button_press_event', onclick)
