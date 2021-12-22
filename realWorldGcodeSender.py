@@ -11,6 +11,10 @@ from svgpathtools import svg2paths, wsvg, svg2paths2, polyline
 from matplotlib import pyplot as plt
 from matplotlib.widgets import TextBox
 from matplotlib.backend_bases import MouseButton
+from copy import deepcopy
+from pygcode import Machine,  GCodeRapidMove, GCodeFeedRate, GCodeLinearMove, GCodeUseMillimeters
+import pygcode
+from pygcode.gcodes import MODAL_GROUP_MAP
 
 import sys
 
@@ -180,15 +184,16 @@ class OverlayGcode:
         self.rotation = 0
         self.cv2Overhead = cv2Overhead
         self.move = False
-        #Generate matplotlib plot from opencv image
 
-        #return
         fig, ax = plt.subplots()
         fig.tight_layout()
         plt.subplots_adjust(bottom=0.01, right = 0.99)
         plt.axis([self.bedViewSizePixels,0, self.bedViewSizePixels, 0])
+        #Generate matplotlib plot from opencv image
         self.matPlotImage = plt.imshow(cv2.cvtColor(self.cv2Overhead, cv2.COLOR_BGR2RGB))
-
+        ###############################################
+        # Generate controls for plot
+        ###############################################
         xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
         self.xBox = TextBox(xAxes, "xOffset (in)", initial="0")
         label = self.xBox.ax.get_children()[1] # label is a child of the TextBox axis
@@ -217,7 +222,54 @@ class OverlayGcode:
         cid = fig.canvas.mpl_connect('button_release_event', self.onrelease)
         cid = fig.canvas.mpl_connect('motion_notify_event', self.onmove)
 
-        self.paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+        self.points = []
+        self.laserPowers = []
+        self.machine = Machine()
+
+        with open('test.nc', 'r') as fh:
+          for line_text in fh.readlines():
+            line = pygcode.Line(line_text)
+            self.machine.process_block(line.block)
+            
+            ######################################
+            # First determine machine motion mode and power
+            ######################################
+            motion = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['motion']])
+            sCode = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['spindle_speed']])
+            power = sCode.split('S')[1]
+            #Make rapid movements 0 laser power
+            if motion == "G00" or motion == "G0":
+              self.laserPowers.append(0.0)
+            else:
+              self.laserPowers.append(float(power) / 100.0)
+
+            ######################################
+            # Determine machine current unit, convert to inches
+            ######################################
+            unit = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['units']])
+            if unit == "G20":
+              if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
+                print(line_text)
+              else:
+                self.points.append(Point3D(self.machine.pos.X, self.machine.pos.Y, self.machine.pos.Z))
+            else:
+              if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
+                print(line_text)
+              else:
+                self.points.append(Point3D(self.machine.pos.X / 25.4, self.machine.pos.Y / 25.4, self.machine.pos.Z / 25.4))
+
+            
+        #scale mm to inches
+        #self.scalePoints(self.points, 1 / 25.4, 1 / 25.4)
+        #self.paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+        #Generate a list of all points up front, non transformed
+        #self.points = []
+        #for path in self.paths:
+        #  newPoints = pathToPoints3D(path, 10)
+        #  self.points.extend(newPoints)
+
+        #scale mm to inches
+        #self.scalePoints(self.points, 1 / 25.4, 1 / 25.4)
         self.updateOverlay()
 
     def scalePoints(self, points, scaleX, scaleY):
@@ -258,22 +310,20 @@ class OverlayGcode:
       rotation = rotation * math.pi / 180
       overlay = image.copy()
 
-      for path in self.paths:
-        points = pathToPoints3D(path, 10)
-        #First scale mm to inches
-        self.scalePoints(points, 1 / 25.4, 1 / 25.4)
-        #Then apply an offset in inches
-        self.offsetPoints(points, xOff, yOff)
-        #Then rotate
-        self.rotatePoints(points, [xOff, yOff], rotation)
-        #Then convert to pixel location
-        self.scalePoints(points, self.bedViewSizePixels / self.bedSize.X, self.bedViewSizePixels / self.bedSize.Y)
-        prevPoint = None
-        for point in points:
-          newPoint = (int(point.X), int(point.Y))
-          if prevPoint is not None:
-            cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 1)
-          prevPoint = newPoint
+      #Make copy of points before transforming them
+      transformedPoints = deepcopy(self.points)
+      #Apply an offset in inches
+      self.offsetPoints(transformedPoints, xOff, yOff)
+      #Then rotate
+      self.rotatePoints(transformedPoints, [xOff, yOff], rotation)
+      #Then convert to pixel location
+      self.scalePoints(transformedPoints, self.bedViewSizePixels / self.bedSize.X, self.bedViewSizePixels / self.bedSize.Y)
+      prevPoint = None
+      for point, laserPower in zip(transformedPoints, self.laserPowers):
+        newPoint = (int(point.X), int(point.Y))
+        if prevPoint is not None:
+          cv2.line(overlay, prevPoint, newPoint, (int(laserPower * 255), 0, 0), 1)
+        prevPoint = newPoint
       return overlay
 
     def updateOverlay(self):
