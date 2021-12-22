@@ -115,18 +115,6 @@ idToLocDict = {0 :[2,21],
                65:[2,   0]}
 
 
-
-global xOffset
-xOffset = 0
-global yOffset
-yOffset = 0
-global rotation
-rotation = 0
-global cv2Overhead
-global matPlotImage
-global move
-move = False
-
 ####################################################################################
 # Should put these in a shared libary
 ####################################################################################
@@ -176,145 +164,177 @@ def pathToPoints3D(path, pointsPerCurve):
       points3D.extend(curPoints3D[1:])
     prevEnd = curPoints3D[-1]
   return points3D
+
 ####################################################################################
+# OverlayGcode class
+####################################################################################
+class OverlayGcode:
+    def __init__(self, cv2Overhead):
+        self.xOffset = 0
+        self.yOffset = 0
+        self.rotation = 0
+        self.cv2Overhead = cv2Overhead
+        self.move = False
 
-def dist(p1, p2):
-  return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
 
-def scalePoints(points, scaleX, scaleY):
-  for point in points:
-    point.X = point.X * scaleX
-    point.Y = point.Y * scaleY
 
-def offsetPoints(points, X, Y):
-  for point in points:
-    point.X = point.X + X
-    point.Y = point.Y + Y
+        self.matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
-def rotatePoints(points, origin, angle):
-  for point in points:
-    point.X, point.Y = rotate(origin, [point.X, point.Y], angle)
+        #overlay = overlaySvg(cv2Overhead)
 
-def rotate(origin, point, angle):
-    """
-    Rotate a point counterclockwise by a given angle around a given origin.
+        fig, ax = plt.subplots()
+        fig.tight_layout()
+        plt.subplots_adjust(bottom=0.01, right = 0.99)
+        plt.axis([bedViewSizePixels,0, bedViewSizePixels, 0])
 
-    The angle should be given in radians.
-    """
-    ox, oy = origin
-    px, py = point
+        xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
+        self.xBox = TextBox(xAxes, "xOffset (in)", initial="0")
+        label = self.xBox.ax.get_children()[1] # label is a child of the TextBox axis
+        label.set_position([0.5,1]) # [x,y] - change here to set the position
+        label.set_horizontalalignment('center')
+        label.set_verticalalignment('bottom')
+        self.xBox.on_submit(self.onUpdateXOffset)
 
-    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
-    qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
-    return qx, qy
+        yAxes = plt.axes([0.01, 0.7, 0.2, 0.04])
+        self.yBox = TextBox(yAxes, "yOffset (in)", initial="0")
+        label = self.yBox.ax.get_children()[1] # label is a child of the TextBox axis
+        label.set_position([0.5,1]) # [x,y] - change here to set the position
+        label.set_horizontalalignment('center')
+        label.set_verticalalignment('bottom')
+        self.yBox.on_submit(self.onUpdateYOffset)
 
-def overlaySvg(image, xOff = 0, yOff = 0, rotation = 0):
-  """
-  image is opencv image
-  xOff is in inches
-  yOff is in inches
-  rotation is in degrees
-  """
-  #convert to radians
-  rotation = rotation * math.pi / 180
-  overlay = image.copy()
-  cv2.line(overlay, (0,0), (400, 0), (0,0,255), 3)
+        rAxes = plt.axes([0.01, 0.6, 0.2, 0.04])
+        self.rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
+        label = self.rBox.ax.get_children()[1] # label is a child of the TextBox axis
+        label.set_position([0.5,1]) # [x,y] - change here to set the position
+        label.set_horizontalalignment('center')
+        label.set_verticalalignment('bottom')
+        self.rBox.on_submit(self.onUpdateRotation)
 
-  cv2.line(overlay, (0,0), (0, 400), (0,0,255), 3)
+        cid = fig.canvas.mpl_connect('button_press_event', self.onclick)
+        cid = fig.canvas.mpl_connect('button_release_event', self.onrelease)
+        cid = fig.canvas.mpl_connect('motion_notify_event', self.onmove)
 
-  paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
 
-  for path in paths:
-    points = pathToPoints3D(path, 10)
-    #First scale mm to inches
-    scalePoints(points, 1 / 25.4, 1 / 25.4)
-    #Then apply an offset in inches
-    offsetPoints(points, xOff, yOff)
-    #Then rotate
-    rotatePoints(points, [xOff, yOff], rotation)
-    #Then convert to pixel location
-    scalePoints(points, bedViewSizePixels / bedSize.X, bedViewSizePixels / bedSize.Y)
-    prevPoint = None
-    for point in points:
-      newPoint = (int(point.X), int(point.Y))
-      if prevPoint is not None:
-        cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 1)
-      prevPoint = newPoint
+        
 
-  return overlay
+    def scalePoints(points, scaleX, scaleY):
+      for point in points:
+        point.X = point.X * scaleX
+        point.Y = point.Y * scaleY
 
-def updateXOffset(text):
-  global xOffset
-  global yOffset
-  global rotation
-  global cv2Overhead
-  if xOffset == float(text):
-    return
-  xOffset = float(text)
-  overlay = overlaySvg(cv2Overhead, xOffset, yOffset, rotation)
-  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-  matPlotImage.figure.canvas.draw()
-  
-def updateYOffset(text):
-  global xOffset
-  global yOffset
-  global rotation
-  global cv2Overhead
-  if yOffset == float(text):
-    return
-  yOffset = float(text)
-  overlay = overlaySvg(cv2Overhead, xOffset, yOffset, rotation)
-  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-  matPlotImage.figure.canvas.draw()
+    def offsetPoints(points, X, Y):
+      for point in points:
+        point.X = point.X + X
+        point.Y = point.Y + Y
 
-def updateRotation(text):
-  global rotation
-  if rotation == float(text):
-    return
-  rotation = float(text)
-  overlay = overlaySvg(cv2Overhead, xOffset, yOffset, rotation)
-  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-  matPlotImage.figure.canvas.draw()
+    def rotatePoints(points, origin, angle):
+      for point in points:
+        point.X, point.Y = rotate(origin, [point.X, point.Y], angle)
 
-def onmove(event):
-  global move
-  move = True
+    def rotate(origin, point, angle):
+        """
+        Rotate a point counterclockwise by a given angle around a given origin.
 
-def onclick(event):
-  global move
-  move = False
+        The angle should be given in radians.
+        """
+        ox, oy = origin
+        px, py = point
 
-def onrelease(event):
-  global cv2Overhead
-  global matPlotImage
-  global xBox
-  global yBox
-  global rBox
-  global xOffset
-  global yOffset
-  global rotation
-  global move
-  #If clicking outside region, or mouse moved since released then return
-  
-  if event.x < 260 or move == True:
-    return
-  pixelsToOrigin = np.array([event.xdata, event.ydata])
-  if event.button == MouseButton.RIGHT:
-      xIn = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
-      yIn = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
-      rotation = math.atan2(yIn - yOffset, xIn - xOffset)
-      rotation = rotation * 180 / math.pi
+        qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
+        qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+        return qx, qy
 
-  else:
-      xOffset = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
-      yOffset = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
+    def overlaySvg(image, xOff = 0, yOff = 0, rotation = 0):
+      """
+      image is opencv image
+      xOff is in inches
+      yOff is in inches
+      rotation is in degrees
+      """
+      #convert to radians
+      rotation = rotation * math.pi / 180
+      overlay = image.copy()
+      cv2.line(overlay, (0,0), (400, 0), (0,0,255), 3)
 
-  overlay = overlaySvg(cv2Overhead, xOffset, yOffset, rotation)
-  matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-  matPlotImage.figure.canvas.draw()
-  xBox.set_val(str(xOffset))
-  yBox.set_val(str(yOffset))
-  rBox.set_val(str(rotation))
+      cv2.line(overlay, (0,0), (0, 400), (0,0,255), 3)
+
+      paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
+
+      for path in paths:
+        points = pathToPoints3D(path, 10)
+        #First scale mm to inches
+        scalePoints(points, 1 / 25.4, 1 / 25.4)
+        #Then apply an offset in inches
+        offsetPoints(points, xOff, yOff)
+        #Then rotate
+        rotatePoints(points, [xOff, yOff], rotation)
+        #Then convert to pixel location
+        scalePoints(points, bedViewSizePixels / bedSize.X, bedViewSizePixels / bedSize.Y)
+        prevPoint = None
+        for point in points:
+          newPoint = (int(point.X), int(point.Y))
+          if prevPoint is not None:
+            cv2.line(overlay, prevPoint, newPoint, (255, 0, 0), 1)
+          prevPoint = newPoint
+
+      return overlay
+
+    def onUpdateXOffset(text):
+      if self.xOffset == float(text):
+        return
+      self.xOffset = float(text)
+      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
+      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+      matPlotImage.figure.canvas.draw()
+      
+    def onUpdateYOffset(text):
+      if self.yOffset == float(text):
+        return
+      self.yOffset = float(text)
+      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
+      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+      matPlotImage.figure.canvas.draw()
+
+    def onUpdateRotation(text):
+      if self.rotation == float(text):
+        return
+      self.rotation = float(text)
+      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
+      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+      matPlotImage.figure.canvas.draw()
+
+    def onmove(event):
+      global move
+      move = True
+
+    def onclick(event):
+      global move
+      move = False
+
+    def onrelease(event):
+      global matPlotImage
+      #If clicking outside region, or mouse moved since released then return
+      
+      if event.x < 260 or move == True:
+        return
+      pixelsToOrigin = np.array([event.xdata, event.ydata])
+      if event.button == MouseButton.RIGHT:
+          xIn = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
+          yIn = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
+          self.rotation = math.atan2(yIn - self.yOffset, xIn - self.xOffset)
+          self.rotation = self.rotation * 180 / math.pi
+
+      else:
+          self.xOffset = pixelsToOrigin[0] / bedViewSizePixels * bedSize.X
+          self.yOffset = pixelsToOrigin[1] / bedViewSizePixels * bedSize.Y
+
+      overlay = overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
+      matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+      matPlotImage.figure.canvas.draw()
+      self.xBox.set_val(str(self.xOffset))
+      self.yBox.set_val(str(self.yOffset))
+      self.rBox.set_val(str(self.rotation))
 
 def crop_half_vertically(img):
   #cropped_img = image[,int(image.shape[1]/2):int(image.shape[1])]
@@ -487,12 +507,6 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 frame = cv2.imread('cnc3.jpeg')
 img = cv2.imread('cnc3.jpeg')
 
-
-# load the image, clone it for cv2Overhead, and then convert it to grayscale
-      
-global cv2Overhead
-cv2Overhead = frame.copy()
-  
 #######################################################################
 # Get grayscale image above threshold
 #######################################################################
@@ -563,44 +577,9 @@ cv2.waitKey()
 #############################################################
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-overlay = overlaySvg(cv2Overhead)
+GCodeOverlay = OverlayGcode(cv2Overhead)
 
-fig, ax = plt.subplots()
-fig.tight_layout()
-plt.subplots_adjust(bottom=0.01, right = 0.99)
-plt.axis([bedViewSizePixels,0, bedViewSizePixels, 0])
-matPlotImage = plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
-xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
-global xBox
-xBox = TextBox(xAxes, "xOffset (in)", initial="0")
-label = xBox.ax.get_children()[1] # label is a child of the TextBox axis
-label.set_position([0.5,1]) # [x,y] - change here to set the position
-label.set_horizontalalignment('center')
-label.set_verticalalignment('bottom')
-xBox.on_submit(updateXOffset)
-
-yAxes = plt.axes([0.01, 0.7, 0.2, 0.04])
-global yBox
-yBox = TextBox(yAxes, "yOffset (in)", initial="0")
-label = yBox.ax.get_children()[1] # label is a child of the TextBox axis
-label.set_position([0.5,1]) # [x,y] - change here to set the position
-label.set_horizontalalignment('center')
-label.set_verticalalignment('bottom')
-yBox.on_submit(updateYOffset)
-
-rAxes = plt.axes([0.01, 0.6, 0.2, 0.04])
-global rBox
-rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
-label = rBox.ax.get_children()[1] # label is a child of the TextBox axis
-label.set_position([0.5,1]) # [x,y] - change here to set the position
-label.set_horizontalalignment('center')
-label.set_verticalalignment('bottom')
-rBox.on_submit(updateRotation)
-
-cid = fig.canvas.mpl_connect('button_press_event', onclick)
-cid = fig.canvas.mpl_connect('button_release_event', onrelease)
-cid = fig.canvas.mpl_connect('motion_notify_event', onmove)
 
 plt.show()
 
