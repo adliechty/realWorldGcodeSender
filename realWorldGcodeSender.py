@@ -15,6 +15,7 @@ from copy import deepcopy
 from pygcode import Machine,  GCodeRapidMove, GCodeFeedRate, GCodeLinearMove, GCodeUseMillimeters
 import pygcode
 from pygcode.gcodes import MODAL_GROUP_MAP
+import re
 
 import sys
 
@@ -169,6 +170,22 @@ def pathToPoints3D(path, pointsPerCurve):
     prevEnd = curPoints3D[-1]
   return points3D
 
+def arcToPoints(startX, startY, endX, endY, i, j, clockWise, curZ):
+    points = []
+    centerX = startX + i
+    centerY = startY + j
+    radius = math.dist([centerX, centerY], [startX, startY])
+    startAngle = math.atan2(startY - centerY, startX - centerX)
+    endAngle   = math.atan2(endY   - centerY, endX   - centerX)
+    for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
+        x = math.cos(angle) * radius
+        y = math.sin(angle) * radius
+        points.append(Point3D(x, y, curZ))
+    x = math.cos(endAngle) * radius
+    y = math.sin(endAngle) * radius
+    points.append(Point3D(x, y, curZ))
+    return points
+
 ####################################################################################
 # OverlayGcode class
 ####################################################################################
@@ -229,6 +246,7 @@ class OverlayGcode:
         with open('test.nc', 'r') as fh:
           for line_text in fh.readlines():
             line = pygcode.Line(line_text)
+            prevPos = self.machine.pos
             self.machine.process_block(line.block)
             
             ######################################
@@ -247,16 +265,37 @@ class OverlayGcode:
             # Determine machine current unit, convert to inches
             ######################################
             unit = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['units']])
+            x = None
             if unit == "G20":
               if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
+                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', line_text)
+                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', line_text)
+                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', line_text)
+                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', line_text)
                 print(line_text)
+                print(line.block)
+                x = float(resultX.group()[1:])
+                y = float(resultY.group()[1:])
+                i = float(resultI.group()[1:])
+                j = float(resultJ.group()[1:])
+                clockWise = "G02" in motion or "G2" in motion
               else:
                 self.points.append(Point3D(self.machine.pos.X, self.machine.pos.Y, self.machine.pos.Z))
             else:
               if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
-                print(line_text)
+                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', line_text)
+                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', line_text)
+                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', line_text)
+                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', line_text)
+                x = float(resultX.group()[1:]) / 25.4
+                y = float(resultY.group()[1:]) / 25.4
+                i = float(resultI.group()[1:]) / 25.4
+                j = float(resultJ.group()[1:]) / 25.4
+                clockWise = "G02" in motion or "G2" in motion
               else:
                 self.points.append(Point3D(self.machine.pos.X / 25.4, self.machine.pos.Y / 25.4, self.machine.pos.Z / 25.4))
+            if x != None:
+              self.points.extend(arcToPoints(prevPos.X, prevPos.Y, self.machine.pos.X, self.machine.pos.Y, i, j, clockWise, self.machine.pos.Z))
 
             
         #scale mm to inches
