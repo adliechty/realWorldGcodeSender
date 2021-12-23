@@ -178,11 +178,11 @@ def arcToPoints(startX, startY, endX, endY, i, j, clockWise, curZ):
     startAngle = math.atan2(startY - centerY, startX - centerX)
     endAngle   = math.atan2(endY   - centerY, endX   - centerX)
     for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
-        x = math.cos(angle) * radius
-        y = math.sin(angle) * radius
+        x = math.cos(angle) * radius + centerX
+        y = math.sin(angle) * radius + centerY
         points.append(Point3D(x, y, curZ))
-    x = math.cos(endAngle) * radius
-    y = math.sin(endAngle) * radius
+    x = math.cos(endAngle) * radius + centerX
+    y = math.sin(endAngle) * radius + centerY
     points.append(Point3D(x, y, curZ))
     return points
 
@@ -268,34 +268,36 @@ class OverlayGcode:
             x = None
             if unit == "G20":
               if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
-                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', line_text)
-                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', line_text)
-                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', line_text)
-                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', line_text)
-                print(line_text)
-                print(line.block)
-                x = float(resultX.group()[1:])
-                y = float(resultY.group()[1:])
-                i = float(resultI.group()[1:])
-                j = float(resultJ.group()[1:])
-                clockWise = "G02" in motion or "G2" in motion
+                beforeComment = line_text.split("(")[0]
+                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                if resultX != None:
+                    x = float(resultX.group()[1:])
+                    y = float(resultY.group()[1:])
+                    i = float(resultI.group()[1:])
+                    j = float(resultJ.group()[1:])
+                    clockWise = "G02" in motion or "G2" in motion
               else:
                 self.points.append(Point3D(self.machine.pos.X, self.machine.pos.Y, self.machine.pos.Z))
             else:
               if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
-                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', line_text)
-                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', line_text)
-                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', line_text)
-                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', line_text)
-                x = float(resultX.group()[1:]) / 25.4
-                y = float(resultY.group()[1:]) / 25.4
-                i = float(resultI.group()[1:]) / 25.4
-                j = float(resultJ.group()[1:]) / 25.4
-                clockWise = "G02" in motion or "G2" in motion
+                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                if resultX != None:
+                    x = float(resultX.group()[1:]) / 25.4
+                    y = float(resultY.group()[1:]) / 25.4
+                    i = float(resultI.group()[1:]) / 25.4
+                    j = float(resultJ.group()[1:]) / 25.4
+                    clockWise = "G02" in motion or "G2" in motion
               else:
                 self.points.append(Point3D(self.machine.pos.X / 25.4, self.machine.pos.Y / 25.4, self.machine.pos.Z / 25.4))
             if x != None:
               self.points.extend(arcToPoints(prevPos.X, prevPos.Y, self.machine.pos.X, self.machine.pos.Y, i, j, clockWise, self.machine.pos.Z))
+              self.laserPowers.extend([self.laserPowers[-1]] * (len(self.points) - len(self.laserPowers)))
 
             
         #scale mm to inches
