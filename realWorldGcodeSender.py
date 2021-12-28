@@ -8,6 +8,8 @@ import time
 import math
 from svgpathtools import Path, Line, QuadraticBezier, CubicBezier, Arc
 from svgpathtools import svg2paths, wsvg, svg2paths2, polyline
+#import matplotlib
+#matplotlib.use('GTK3Agg') 
 from matplotlib import pyplot as plt
 from matplotlib.widgets import TextBox
 from matplotlib.backend_bases import MouseButton
@@ -18,6 +20,11 @@ from pygcode.gcodes import MODAL_GROUP_MAP
 import re
 
 import sys
+#sys.path.insert(1, 'C:\\Git\\gerbil\\')
+#sys.path.insert(1, 'C:\\Git\\gcode_machine\\')
+from gerbil import Gerbil
+import serial.tools.list_ports
+
 
 class Point3D:
   def __init__(self, X, Y, Z = None):
@@ -186,11 +193,24 @@ def arcToPoints(startX, startY, endX, endY, i, j, clockWise, curZ):
     points.append(Point3D(x, y, curZ))
     return points
 
+def rotate(origin, point, angle):
+        """
+        Rotate a point counterclockwise by a given angle around a given origin.
+
+        The angle should be given in radians.
+        """
+        ox, oy = origin
+        px, py = point
+
+        qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
+        qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+        return qx, qy
+
 ####################################################################################
 # OverlayGcode class
 ####################################################################################
 class OverlayGcode:
-    def __init__(self, cv2Overhead):
+    def __init__(self, cv2Overhead, gCodeFile):
         global bedViewSizePixels
         global bedSize
         
@@ -199,7 +219,7 @@ class OverlayGcode:
         self.xOffset = 0
         self.yOffset = 0
         self.rotation = 0
-        self.cv2Overhead = cv2Overhead
+        self.cv2Overhead = cv2.cvtColor(cv2Overhead, cv2.COLOR_BGR2RGB)
         self.move = False
 
         fig, ax = plt.subplots()
@@ -207,7 +227,7 @@ class OverlayGcode:
         plt.subplots_adjust(bottom=0.01, right = 0.99)
         plt.axis([self.bedViewSizePixels,0, self.bedViewSizePixels, 0])
         #Generate matplotlib plot from opencv image
-        self.matPlotImage = plt.imshow(cv2.cvtColor(self.cv2Overhead, cv2.COLOR_BGR2RGB))
+        self.matPlotImage = plt.imshow(self.cv2Overhead)
         ###############################################
         # Generate controls for plot
         ###############################################
@@ -237,13 +257,18 @@ class OverlayGcode:
 
         cid = fig.canvas.mpl_connect('button_press_event', self.onclick)
         cid = fig.canvas.mpl_connect('button_release_event', self.onrelease)
-        cid = fig.canvas.mpl_connect('motion_notify_event', self.onmove)
+        cid = fig.canvas.mpl_connect('motion_notify_event', self.onmousemove)
+        cid = fig.canvas.mpl_connect('key_press_event', self.onkeypress)
+
+        #Create object to handle controlling the CNC machine and sending the g codes to it
+        self.sender = GCodeSender(gCodeFile)
+        
 
         self.points = []
         self.laserPowers = []
         self.machine = Machine()
 
-        with open('test.nc', 'r') as fh:
+        with open(gCodeFile, 'r') as fh:
           for line_text in fh.readlines():
             line = pygcode.Line(line_text)
             prevPos = self.machine.pos
@@ -325,20 +350,7 @@ class OverlayGcode:
 
     def rotatePoints(self, points, origin, angle):
       for point in points:
-        point.X, point.Y = self.rotate(origin, [point.X, point.Y], angle)
-
-    def rotate(self, origin, point, angle):
-        """
-        Rotate a point counterclockwise by a given angle around a given origin.
-
-        The angle should be given in radians.
-        """
-        ox, oy = origin
-        px, py = point
-
-        qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
-        qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
-        return qx, qy
+        point.X, point.Y = rotate(origin, [point.X, point.Y], angle)
 
     def overlaySvg(self, image, xOff = 0, yOff = 0, rotation = 0):
       """
@@ -363,13 +375,13 @@ class OverlayGcode:
       for point, laserPower in zip(transformedPoints, self.laserPowers):
         newPoint = (int(point.X), int(point.Y))
         if prevPoint is not None:
-          cv2.line(overlay, prevPoint, newPoint, (int(laserPower * 255), 0, 0), 1)
+          cv2.line(overlay, prevPoint, newPoint, (int(laserPower * 255), 0, 0), 2)
         prevPoint = newPoint
       return overlay
 
     def updateOverlay(self):
         overlay = self.overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
-        self.matPlotImage.set_data(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+        self.matPlotImage.set_data(overlay)
         self.matPlotImage.figure.canvas.draw()
 
     def onUpdateXOffset(self, text):
@@ -390,8 +402,23 @@ class OverlayGcode:
       self.rotation = float(text)
       self.updateOverlay()
 
-    def onmove(self, event):
+    def onmousemove(self, event):
       self.move = True
+      self.mouseX = event.xdata
+      self.mouseY = event.ydata
+
+    def onkeypress(self, event):
+        if   event.key == 's':
+            self.sender.send_file(self.xOffset, self.yOffset, self.rotation)
+        elif event.key == 'h':
+            self.sender.home_machine()
+        elif event.key == 'z':
+            #Find X, Y, and Z position of the aluminum reference block on the work pice
+            #sepcify the X and Y estimated position of the reference block
+            self.sender.zero_on_workpice(self.refX, self.refY)
+        elif event.key == 'm':
+            self.sender.move_to(self.mouseX / self.bedViewSizePixels * self.bedSize.X \
+                              , self.mouseY / self.bedViewSizePixels * self.bedSize.Y)
 
     def onclick(self, event):
       self.move = False
@@ -570,6 +597,64 @@ def display_4_lines(pixels, frame, flip=False):
   cv2.line(frame, line2,line3,(0,255,255),3)
   cv2.line(frame, line3,line4,(0,255,255),3)
   cv2.line(frame, line4,line1,(0,255,255),3)
+
+class GCodeSender:
+    def __init__(self, gCodeFile):
+        self.grbl = Gerbil(self.gerbil_callback)
+        self.grbl.setup_logging()
+
+        ports = serial.tools.list_ports.comports()
+        for p in ports:
+            print(p.device)
+
+        self.grbl.cnect("/dev/ttyUSB0", 57600)
+        self.grbl.poll_start()
+        self.gCodeFile = gCodeFile
+
+
+
+    def gerbil_callback(self, eventstring, *data):
+        args = []
+        for d in data:
+            args.append(str(d))
+        print("GERBIL CALLBACK: event={} data={}".format(eventstring.ljust(30), ", ".join(args)))
+
+    def home_machine(self):
+        self.gerbil.send_imediately("$H\n")
+        pass
+
+    def zero_on_workpice(self, guessX, guessY):
+        pass
+
+    def move_to(self, x, y , z = None, feedRate = 100):
+        if z == None:
+            zStr = ""
+        else:
+            zStr = " Z" + str(z)
+        xStr = " X" + str(X)
+        yStr = " Y" + str(Y)
+        fStr = " F" + str(feedRate)
+        self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
+
+    def send_file(self, xOffset, yOffset, rotation):
+        #Set to inches
+        self.gerbil.send_immediately("G20\n")
+
+        self.gerbil.send_immediately("G54 X" + str(xOffset) + " Y" + str(yOffset) + "\n")
+
+        deg = -rotation * 180 / math.pi
+        self.gerbil.send_immediately("G68 X0 Y0 R" + str(deg) + "\n")
+        #Set back to mm, typically the units g code assumes
+        self.gerbil.send_immediately("G21\n")
+
+        # Turn off rotated coordinate system
+        self.gerbil.send_immediately("G69\n")
+
+        with open(self.gCodeFile, 'r') as fh:
+            for line_text in fh.readlines():
+                self.gerbil.stream(line_text)
+
+
 #############################################################################
 # Main
 #############################################################################
@@ -653,13 +738,17 @@ gray = cv2.resize(frame, (1280, 700))
 cv2.imshow('image',gray)
 cv2.waitKey()
   
-#############################################################
-# Warp perspective to perpendicular to bed view
-#############################################################
+######################################################################
+# Warp perspective to perpendicular to bed view, create overlay calss
+######################################################################
+gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile)
 
+######################################################################
+# Create a G Code sender now that overlay is created
+######################################################################
 
 plt.show()
 
