@@ -210,7 +210,7 @@ def rotate(origin, point, angle):
 # OverlayGcode class
 ####################################################################################
 class OverlayGcode:
-    def __init__(self, cv2Overhead, gCodeFile):
+    def __init__(self, cv2Overhead, gCodeFile, disableSender = True):
         global bedViewSizePixels
         global bedSize
         
@@ -261,7 +261,8 @@ class OverlayGcode:
         cid = fig.canvas.mpl_connect('key_press_event', self.onkeypress)
 
         #Create object to handle controlling the CNC machine and sending the g codes to it
-        self.sender = GCodeSender(gCodeFile)
+        if disableSender == False:
+            self.sender = GCodeSender(gCodeFile)
         
 
         self.points = []
@@ -338,6 +339,9 @@ class OverlayGcode:
         #self.scalePoints(self.points, 1 / 25.4, 1 / 25.4)
         self.updateOverlay()
 
+    def set_ref_loc(self, refPoints):
+        self.refPoints = refPoints
+        
     def scalePoints(self, points, scaleX, scaleY):
       for point in points:
         point.X = point.X * scaleX
@@ -410,12 +414,15 @@ class OverlayGcode:
     def onkeypress(self, event):
         if   event.key == 's':
             self.sender.send_file(self.xOffset, self.yOffset, self.rotation)
+
         elif event.key == 'h':
             self.sender.home_machine()
+
         elif event.key == 'z':
             #Find X, Y, and Z position of the aluminum reference block on the work pice
             #sepcify the X and Y estimated position of the reference block
-            self.sender.zero_on_workpice(self.refX, self.refY)
+            self.sender.zero_on_workpice(self.refPoints)
+
         elif event.key == 'm':
             self.sender.move_to(self.mouseX / self.bedViewSizePixels * self.bedSize.X \
                               , self.mouseY / self.bedViewSizePixels * self.bedSize.Y)
@@ -455,7 +462,7 @@ def crop_half_vertically(img):
   return left, right
 
 
-def sortBoxPoints(points, rightSide):
+def sortBoxPoints(points, rightSide = True):
   #First sort by X
   sortedX = sorted(points , key=lambda k: [k[0]])
   #Then sorty by Y left and right most two X set of points
@@ -473,6 +480,14 @@ def sortBoxPoints(points, rightSide):
     maxZminY = leftTwoPoints[1]
     
   return [minZminY, minZmaxY, maxZmaxY, maxZminY]
+def get_id_loc(image, boxes, ids, ID):
+    for box, curID in zip(boxes, ids):
+        if curID != ID:
+            continue
+        boxPoints = box[0]
+        boxPointsSorted = np.array(sortBoxPoints(boxPoints))
+        return boxPointsSorted
+    return None
 
 def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
   global boxWidth
@@ -481,9 +496,9 @@ def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
   locations = []
   for box, ID in zip(boxes, ids):
     #IDs below 33 are on right side, skip those if looking for left side points
-    if rightSide == False and ID < 33:
-      continue
-    elif rightSide == True and ID >= 33:
+    if (rightSide == False and ID < 33) or \
+       (rightSide == True  and ID >= 33) or \
+       (ID > 65):
       continue
     boxLoc = idToLocDict[ID[0]]
     for boxPoints in box:
@@ -623,7 +638,32 @@ class GCodeSender:
         self.gerbil.send_imediately("$H\n")
         pass
 
-    def zero_on_workpice(self, guessX, guessY):
+    def zero_on_workpice(self, refPoints):
+        avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
+        avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
+
+        # Set absolute positioning
+        self.gerbil.send_imediately("G53\n") # Absolute positioning
+        self.gerbil.send_imediately("G20\n") # Inches
+        self.gerbil.send_imediately("G0 Z-0.25\n") # Move close to Z limit
+        #Rapid traverse to above reference plate
+        self.gerbil.send_imediately("G0 X" + str(avgX) + " Y" + str(avgY) + "\n") # Move close to Z limit
+        #Move down medium speed to reference plate
+        self.gerbil.send_imediately("G38.2 Z-0.05 F5.9\n")
+        g38.2 z-0.05 f1.5
+        #Move up, then slowly to reference plate
+
+        #Move up, then move to side of reference plate
+        #Move down, then over to side of reference plate
+        #Move back, then slowly to side of reference plate
+
+        #Move up, then over to other side
+
+        #Move up, then move to side of reference plate
+        #Move down, then over to side of reference plate
+        #Move back, then slowly to side of reference plate
+
+        #Move up, then to center of reference plate
         pass
 
     def move_to(self, x, y , z = None, feedRate = 100):
@@ -640,19 +680,26 @@ class GCodeSender:
         #Set to inches
         self.gerbil.send_immediately("G20\n")
 
+        ##########################################
+        #Offset work to desired offset
+        ##########################################
         self.gerbil.send_immediately("G54 X" + str(xOffset) + " Y" + str(yOffset) + "\n")
 
+        ##########################################
+        #Rotate work to desired rotation
+        ##########################################
         deg = -rotation * 180 / math.pi
         self.gerbil.send_immediately("G68 X0 Y0 R" + str(deg) + "\n")
+
         #Set back to mm, typically the units g code assumes
         self.gerbil.send_immediately("G21\n")
-
-        # Turn off rotated coordinate system
-        self.gerbil.send_immediately("G69\n")
 
         with open(self.gCodeFile, 'r') as fh:
             for line_text in fh.readlines():
                 self.gerbil.stream(line_text)
+
+        # Turn off rotated coordinate system
+        self.gerbil.send_immediately("G69\n")
 
 
 #############################################################################
@@ -670,8 +717,8 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-frame = cv2.imread('cnc3.jpeg')
-img = cv2.imread('cnc3.jpeg')
+frame = cv2.imread('cnc4.jpeg')
+img = cv2.imread('cnc4.jpeg')
 
 #######################################################################
 # Get grayscale image above threshold
@@ -745,6 +792,18 @@ gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
 GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile)
+
+########################################
+# Detect box location in overhead image
+########################################
+#Change overhead image to gray for box detection
+refPixelLoc    = get_id_loc(frame, boxes, ids, 66)
+refPhysicalLoc = cv2.perspectiveTransform(refPixelLoc.reshape(-1,1,2), bedPixelToPhysicalLoc)
+bedPercent = refPhysicalLoc / [frame.shape[1], frame.shape[0]]
+bedLoc = []
+for a in bedPercent:
+    bedLoc.append(a[0] * [bedSize.X, bedSize.Y])
+GCodeOverlay.set_ref_loc(bedLoc)
 
 ######################################################################
 # Create a G Code sender now that overlay is created
