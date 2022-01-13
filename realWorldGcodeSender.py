@@ -25,6 +25,9 @@ import sys
 from gerbil import Gerbil
 import serial.tools.list_ports
 
+import threading
+import functools
+
 
 class Point3D:
   def __init__(self, X, Y, Z = None):
@@ -626,6 +629,8 @@ class GCodeSender:
         self.grbl.poll_start()
         self.gCodeFile = gCodeFile
 
+        self.event = threading.Event()
+
 
 
     def gerbil_callback(self, eventstring, *data):
@@ -633,6 +638,10 @@ class GCodeSender:
         for d in data:
             args.append(str(d))
         print("GERBIL CALLBACK: event={} data={}".format(eventstring.ljust(30), ", ".join(args)))
+        self.curData = data
+
+        #indicate callback is done
+        self.event.set()
 
     def home_machine(self):
         self.gerbil.send_imediately("$H\n")
@@ -646,12 +655,25 @@ class GCodeSender:
         self.gerbil.send_imediately("G53\n") # Absolute positioning
         self.gerbil.send_imediately("G20\n") # Inches
         self.gerbil.send_imediately("G0 Z-0.25\n") # Move close to Z limit
+
         #Rapid traverse to above reference plate
-        self.gerbil.send_imediately("G0 X" + str(avgX) + " Y" + str(avgY) + "\n") # Move close to Z limit
+        self.gerbil.send_imediately("G0 X" + str(avgX) + " Y" + str(avgY) + "\n")
+
         #Move down medium speed to reference plate
-        self.gerbil.send_imediately("G38.2 Z-0.05 F5.9\n")
-        g38.2 z-0.05 f1.5
+        self.gerbil.send_imediately("G38.2 Z-3.75 F5.9\n")
+        M114Resp = self.waitOnGCodeComplete("G38")
+
+        self.gerbil.send_imediately("M114")
+        M114Resp = self.waitOnGCodeComplete("M114")
+        
+        resultZ = re.search('Z[+-]?([0-9]*[.])?[0-9]+', M114Resp)
+        z = float(resultY.group()[1:])
+
         #Move up, then slowly to reference plate
+        self.gerbil.send_imediately("G0 Z" + str(z + 0.25) + "\n") # Move just above reference plate
+        self.gerbil.send_imediately("G38.2 Z" + str(z - 0.125) + " F1.5\n") #Move down slowly
+        M114Resp = self.waitOnGCodeComplete("G38")
+        self.gerbil.send_imediately("G92 Z0")
 
         #Move up, then move to side of reference plate
         #Move down, then over to side of reference plate
@@ -665,6 +687,13 @@ class GCodeSender:
 
         #Move up, then to center of reference plate
         pass
+    def waitOnGCodeComplete(self, gCode):
+      resp = None
+      while Resp == None:
+        self.event.wait()
+        if gCode in self.curData:
+          resp = self.curData["M114"]
+      return
 
     def move_to(self, x, y , z = None, feedRate = 100):
         if z == None:
