@@ -655,16 +655,12 @@ class GCodeSender:
 
         # Set absolute positioning
         self.gerbil.send_immediately("G53\n") # Absolute positioning
-        time.sleep(1)
         self.gerbil.send_immediately("G20\n") # Inches
-        time.sleep(1)
         self.gerbil.send_immediately("G0 Z-0.25\n") # Move close to Z limit
-        time.sleep(1)
 
         #Rapid traverse to above reference plate
         print("avgXY: " + str(avgX) + " " + str(avgY))
         self.gerbil.send_immediately("G0 X" + str(avgX) + " Y" + str(avgY) + "\n")
-        time.sleep(1)
 
         #Move down medium speed to reference plate
         self.gerbil.send_immediately("G38.2 Z-3.75 F5.9\n")
