@@ -641,6 +641,7 @@ class GCodeSender:
         self.curData = data
         self.curEvent = eventstring
         print(eventstring)
+        print(data)
 
         #indicate callback is done
         self.event.set()
@@ -653,34 +654,38 @@ class GCodeSender:
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
 
-        # Set absolute positioning
-        self.gerbil.send_immediately("G53\n") # Absolute positioning
-        time.sleep(1)
+        # G53 prepended on G code means run code with absolute positioning
         self.gerbil.send_immediately("G20\n") # Inches
         time.sleep(1)
-        self.gerbil.send_immediately("G0 Z-0.25\n") # Move close to Z limit
+        self.gerbil.send_immediately("G53 G1 Z-0.25 F50\n") # Move close to Z limit
+        self.waitOnGCodeComplete("G53")
+        print("Complete")
         time.sleep(1)
+        return
 
         #Rapid traverse to above reference plate
         print("avgXY: " + str(avgX) + " " + str(avgY))
-        self.gerbil.send_immediately("G0 X" + str(avgX) + " Y" + str(avgY) + "\n")
+        #self.gerbil.send_immediately("G53 G1 X" + str(avgX) + " Y" + str(avgY) + "\n")
         time.sleep(1)
 
         #Move down medium speed to reference plate
+        self.gerbil.send_immediately("G92 Z0\n") # G38.2 only works in work coordinate systeem, so set work coordinate to 0 so we know where we are in that
         self.gerbil.send_immediately("G38.2 Z-3.75 F5.9\n")
-        M114Resp = self.waitOnGCodeComplete("G38")
+        M114Resp = self.waitOnGCodeComplete("PRB")
+        self.gerbil.send_immediately("G92 Z0\n")
 
-        self.gerbil.send_immediately("M114")
-        M114Resp = self.waitOnGCodeComplete("M114")
+        #self.gerbil.send_immediately("M114")
+        #M114Resp = self.waitOnGCodeComplete("M114")
         
-        resultZ = re.search('Z[+-]?([0-9]*[.])?[0-9]+', M114Resp)
-        z = float(resultY.group()[1:])
+        #resultZ = re.search('Z[+-]?([0-9]*[.])?[0-9]+', M114Resp)
+        #z = float(resultY.group()[1:])
 
         #Move up, then slowly to reference plate
-        self.gerbil.send_immediately("G0 Z" + str(z + 0.25) + "\n") # Move just above reference plate
-        self.gerbil.send_immediately("G38.2 Z" + str(z - 0.125) + " F1.5\n") #Move down slowly
-        M114Resp = self.waitOnGCodeComplete("G38")
-        self.gerbil.send_immediately("G92 Z0")
+        self.gerbil.send_immediately("G1 Z0.25") # Move just above reference plate
+        self.gerbil.send_immediately("G38.2 Z-0.05 F1.5\n") #Move down slowly
+        M114Resp = self.waitOnGCodeComplete("PRB")
+        self.gerbil.send_immediately("G92 Z0") # set this as Z0
+        self.gerbil.send_immediately("G1 Z1") # Move just above reference plate
 
         #Move up, then move to side of reference plate
         #Move down, then over to side of reference plate
@@ -698,9 +703,14 @@ class GCodeSender:
       resp = None
       while resp == None:
         self.event.wait()
-        if gCode in self.curData:
-          resp = self.curData["M114"]
-      return
+        print("curData:" + str(self.curData))
+        for data in self.curData:
+          print("    " + str(data))
+          if gCode in str(data):
+            resp = data
+        time.sleep(1)
+      print("Found")
+      return resp
 
     def move_to(self, x, y , z = None, feedRate = 100):
         if z == None:
