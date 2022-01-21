@@ -427,7 +427,7 @@ class OverlayGcode:
             self.sender.zero_on_workpice(self.refPoints)
 
         elif event.key == 'm':
-            self.sender.move_to(self.mouseX / self.bedViewSizePixels * self.bedSize.X \
+            self.sender.move_to_absolute(self.mouseX / self.bedViewSizePixels * self.bedSize.X \
                               , self.mouseY / self.bedViewSizePixels * self.bedSize.Y)
 
     def onclick(self, event):
@@ -630,6 +630,9 @@ class GCodeSender:
         self.gerbil.poll_start()
         self.gCodeFile = gCodeFile
 
+        self.dataList = []
+        self.eventList = []
+
 
 
 
@@ -640,6 +643,8 @@ class GCodeSender:
         print("GERBIL CALLBACK: event={} data={}".format(eventstring.ljust(30), ", ".join(args)))
         self.curData = data
         self.curEvent = eventstring
+        self.dataList.append(data)
+        self.eventList.append(eventstring)
         print(eventstring)
         print(data)
 
@@ -654,10 +659,11 @@ class GCodeSender:
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
 
+        self.flushGcodeRespQue()
         # G53 prepended on G code means run code with absolute positioning
         self.gerbil.send_immediately("G20\n") # Inches
         time.sleep(1)
-        self.gerbil.send_immediately("G53 G1 Z-0.25 F50\n") # Move close to Z limit
+        self.move_to_absolute(None, None, -0.25, feedRate = 50) # Move close to Z limit
         self.waitOnGCodeComplete("G53")
         print("Complete")
         time.sleep(1)
@@ -698,29 +704,44 @@ class GCodeSender:
         #Move back, then slowly to side of reference plate
 
         #Move up, then to center of reference plate
-        pass
     def waitOnGCodeComplete(self, gCode):
       resp = None
       while resp == None:
-        self.event.wait()
-        print("curData:" + str(self.curData))
-        time.sleep(1)
-        for data in self.curData:
+        if len(self.dataList) == 0:
+          self.event.wait()
+        print("curData:" + str(self.dataList[0]))
+        for data in self.dataList:
           print("    " + str(data))
           if gCode in str(data):
             resp = data
+        #Remove item from list
+        self.dataList.pop(0)
+        self.eventList.pop(0)
+        time.sleep(1)
       print("Found")
       return resp
 
-    def move_to(self, x, y , z = None, feedRate = 100):
+    def flushGcodeRespQue(self):
+        self.dataList = []
+        self.eventList = []
+
+    def move_to_absolute(self, x, y , z = None, feedRate = 100):
+        if x == None:
+            xStr = ""
+        else:
+            xStr = " X" + str(X)
+
+        if y == None:
+            yStr = ""
+        else:
+            yStr = " Y" + str(z)
+
         if z == None:
             zStr = ""
         else:
             zStr = " Z" + str(z)
-        xStr = " X" + str(X)
-        yStr = " Y" + str(Y)
         fStr = " F" + str(feedRate)
-        self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
+        self.gerbil.send_immediately("G53 G1" + xStr + yStr + zStr + fStr + "\n")
 
     def send_file(self, xOffset, yOffset, rotation):
         #Set to inches
