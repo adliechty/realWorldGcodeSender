@@ -224,6 +224,7 @@ class OverlayGcode:
         self.rotation = 0
         self.cv2Overhead = cv2.cvtColor(cv2Overhead, cv2.COLOR_BGR2RGB)
         self.move = False
+        self.previewNextDrawnPoint = False
 
         fig, ax = plt.subplots()
         fig.tight_layout()
@@ -269,9 +270,10 @@ class OverlayGcode:
         
 
         self.points = []
+        self.drawnPoints = []
         self.laserPowers = []
         self.machine = Machine()
-
+        
         with open(gCodeFile, 'r') as fh:
           for line_text in fh.readlines():
             line = pygcode.Line(line_text)
@@ -366,6 +368,7 @@ class OverlayGcode:
       yOff is in inches
       rotation is in degrees
       """
+      toolWidth = round(abs(0.25 * self.bedViewSizePixels / self.bedSize.X))
       #convert to radians
       rotation = rotation * math.pi / 180
       overlay = image.copy()
@@ -382,7 +385,16 @@ class OverlayGcode:
       for point, laserPower in zip(transformedPoints, self.laserPowers):
         newPoint = (int(point.X), int(point.Y))
         if prevPoint is not None:
-          cv2.line(overlay, prevPoint, newPoint, (int(laserPower * 255), 0, 0), 2)
+          cv2.line(overlay, prevPoint, newPoint, (int(laserPower * 255), 0, 0), toolWidth)
+        prevPoint = newPoint
+
+      transformedPoints = deepcopy(self.drawnPoints)
+      self.scalePoints(transformedPoints, self.bedViewSizePixels / self.bedSize.X, self.bedViewSizePixels / self.bedSize.Y)
+      prevPoint = None
+      for point in transformedPoints:
+        newPoint = (int(point.X), int(point.Y))
+        if prevPoint is not None:
+          cv2.line(overlay, prevPoint, newPoint, (0, 255, 0), toolWidth)
         prevPoint = newPoint
       return overlay
 
@@ -413,8 +425,27 @@ class OverlayGcode:
       self.move = True
       self.mouseX = event.xdata
       self.mouseY = event.ydata
+      if self.previewNextDrawnPoint:
+        x, y = self._get_mouse_pos_inches()
+        #provision to preview first point
+        firstPoint = False
+        if len(self.drawnPoints) == 0:
+          self.drawnPoints.append(Point3D(x, y, 0))
+          firstPoint = True
+        self.drawnPoints.append(Point3D(x, y, 0))
+        self.updateOverlay()
+        self.drawnPoints.pop()
+        if firstPoint:
+          self.drawnPoints.pop()
 
+
+    def _get_mouse_pos_inches(self):
+      x = self.mouseX / self.bedViewSizePixels * self.bedSize.X
+      y = self.mouseY / self.bedViewSizePixels * self.bedSize.Y
+      return x, y
     def onkeypress(self, event):
+        x, y = self._get_mouse_pos_inches()
+        print(event.key)
         if   event.key == 's':
             self.sender.send_file(self.xOffset, self.yOffset, self.rotation)
 
@@ -422,13 +453,41 @@ class OverlayGcode:
             self.sender.home_machine()
 
         elif event.key == 'z':
-            #Find X, Y, and Z position of the aluminum reference block on the work pice
+            #Find X, Y, and Z position of the aluminum reference block on the work piece
             #sepcify the X and Y estimated position of the reference block
             self.sender.zero_on_workpice(self.refPoints)
 
         elif event.key == 'm':
-            self.sender.move_to_absolute(self.mouseX / self.bedViewSizePixels * self.bedSize.X \
-                              , self.mouseY / self.bedViewSizePixels * self.bedSize.Y)
+            self.sender.absolute_move(x, y)
+
+        elif event.key == 'd':
+            # first d turns on preview
+            if not self.previewNextDrawnPoint:
+                self.previewNextDrawnPoint = True
+                return
+            self.drawnPoints.append(Point3D(x, y, 0))
+            self.updateOverlay()
+            print(self.drawnPoints)
+        # erase one drawn point
+        elif event.key == 'e':
+            if len(self.drawnPoints) > 0:
+                self.drawnPoints.pop()
+            self.updateOverlay()
+        # Erase all drawn points
+        elif event.key == 'E':
+            self.drawnPoints = []
+            self.updateOverlay()
+        elif event.key == 'c':
+            self.sender.send_drawnPoints(self.drawnPoints)
+        elif event.key == 'shift':
+            self.shiftHeld = True
+            print("shift")
+
+        # if a non drawing key was pushed then exit drawing preveiw mode
+        if event.key != 'd' and event.key.lower() != 'e' and event.key != 'shift':
+            if self.previewNextDrawnPoint:
+                self.previewNextDrawnPoint = False
+                self.updateOverlay()
 
     def onclick(self, event):
       self.move = False
@@ -619,6 +678,9 @@ def display_4_lines(pixels, frame, flip=False):
 class GCodeSender:
     def __init__(self, gCodeFile):
         self.event = threading.Event()
+        self.dataList = []
+        self.eventList = []
+
         self.gerbil = Gerbil(self.gerbil_callback)
         self.gerbil.setup_logging()
 
@@ -630,8 +692,6 @@ class GCodeSender:
         self.gerbil.poll_start()
         self.gCodeFile = gCodeFile
 
-        self.dataList = []
-        self.eventList = []
 
 
 
@@ -654,16 +714,26 @@ class GCodeSender:
     def home_machine(self):
         self.gerbil.send_immediately("$H\n")
         pass
+    def set_inches(self):
+        self.gerbil.send_immediately("G20\n") # Inches
+
+    def set_work_coord_offset(self, x = None, y = None, z = None):
+        xStr, yStr, zStr = self._get_xyz_string(x, y, z)
+        self.gerbil.send_immediately("G92 " + xStr + yStr + zStr + "\n") # G38.2 only works in work coordinate systeem, so set work coordinate to 0 so we know where we are in that
+
+    def probe(self, x = None, y = None, z = None, feed = 5.9):
+        xStr, yStr, zStr = self._get_xyz_string(x, y, z)
+        self.gerbil.send_immediately("G38.2 " + xStr + yStr + zStr + "F" + feed + "\n")
+        M114Resp = self.waitOnGCodeComplete("PRB")
 
     def zero_on_workpice(self, refPoints):
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
 
         self.flushGcodeRespQue()
-        # G53 prepended on G code means run code with absolute positioning
-        self.gerbil.send_immediately("G20\n") # Inches
+        self.set_inches()
         time.sleep(1)
-        self.move_to_absolute(None, None, -0.25, feedRate = 50) # Move close to Z limit
+        self.absolute_move(None, None, -0.25, feedRate = 50) # Move close to Z limit
         self.waitOnGCodeComplete("G53")
         print("Complete")
         time.sleep(1)
@@ -675,23 +745,15 @@ class GCodeSender:
         time.sleep(1)
 
         #Move down medium speed to reference plate
-        self.gerbil.send_immediately("G92 Z0\n") # G38.2 only works in work coordinate systeem, so set work coordinate to 0 so we know where we are in that
-        self.gerbil.send_immediately("G38.2 Z-3.75 F5.9\n")
-        M114Resp = self.waitOnGCodeComplete("PRB")
-        self.gerbil.send_immediately("G92 Z0\n")
-
-        #self.gerbil.send_immediately("M114")
-        #M114Resp = self.waitOnGCodeComplete("M114")
-        
-        #resultZ = re.search('Z[+-]?([0-9]*[.])?[0-9]+', M114Resp)
-        #z = float(resultY.group()[1:])
+        self.set_work_coord_offset(z = 0) # probe ony works on work coordinage system, set it to 0 so we know where we are in that
+        self.probe(z = -3.75, feed = 5.9) # move down by 3.75" until probe hit
+        self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
 
         #Move up, then slowly to reference plate
-        self.gerbil.send_immediately("G1 Z0.25") # Move just above reference plate
-        self.gerbil.send_immediately("G38.2 Z-0.05 F1.5\n") #Move down slowly
-        M114Resp = self.waitOnGCodeComplete("PRB")
-        self.gerbil.send_immediately("G92 Z0") # set this as Z0
-        self.gerbil.send_immediately("G1 Z1") # Move just above reference plate
+        self.work_offset_move(z = 0.25, feed=100) # Move just above reference plate
+        self.probe(z = 0.05, feed = 1.5)
+        self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
+        self.work_offset_move(z = 1.0, feed=100)
 
         #Move up, then move to side of reference plate
         #Move down, then over to side of reference plate
@@ -725,7 +787,7 @@ class GCodeSender:
         self.dataList = []
         self.eventList = []
 
-    def move_to_absolute(self, x, y , z = None, feedRate = 100):
+    def _get_xyz_string(self, x = None, y = None, z = None):
         if x == None:
             xStr = ""
         else:
@@ -740,9 +802,17 @@ class GCodeSender:
             zStr = ""
         else:
             zStr = " Z" + str(z)
+        return xStr, yStr, zStr
 
+    def absolute_move(self, x = None, y = None , z = None, feedRate = 100):
+        xStr, yStr, zStr = self._get_xyz_string(x, y, z)
         fStr = " F" + str(feedRate)
         self.gerbil.send_immediately("G53 G1" + xStr + yStr + zStr + fStr + "\n")
+
+    def work_offset_move(self, x = None, y = None , z = None, feedRate = 100):
+        xStr, yStr, zStr = self._get_xyz_string(x, y, z)
+        fStr = " F" + str(feedRate)
+        self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
 
     def send_file(self, xOffset, yOffset, rotation):
         #Set to inches
@@ -761,6 +831,18 @@ class GCodeSender:
 
         #Set back to mm, typically the units g code assumes
         self.gerbil.send_immediately("G21\n")
+
+        ZFound = False
+        with open(self.gCodeFile, 'r') as fh:
+          for line_text in fh.readlines():
+            if " Z" in line_text.upper():
+              ZFound = True
+              break
+
+        # if Z move found in file (not a laser cutting file), then move cutter away from workspace as first move
+        # so that if it was forgotten to do that, the first rapid traverse does not run into the workpiece
+        if ZFound:
+          self.absolute_move(z = -0.25)
 
         with open(self.gCodeFile, 'r') as fh:
             for line_text in fh.readlines():
@@ -859,7 +941,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, False)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, True)
 
 ########################################
 # Detect box location in overhead image
