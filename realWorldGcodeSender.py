@@ -22,26 +22,17 @@ import re
 import sys
 #sys.path.insert(1, 'C:\\Git\\gerbil\\')
 #sys.path.insert(1, 'C:\\Git\\gcode_machine\\')
+sys.path.insert(1, '../svgToGCode/')
+from svgToGCode import cncPathsClass
+from svgToGCode import cncGcodeGeneratorClass
+from svgToGCode import Point3D
+
 from gerbil import Gerbil
 import serial.tools.list_ports
 
 import threading
 import functools
 
-
-class Point3D:
-  def __init__(self, X, Y, Z = None):
-    self.X = X
-    self.Y = Y
-    self.Z = Z
-  def to2DComplex(self):
-    return self.X + self.Y * 1j
-  def distanceXY(self, point):
-    return distanceXY(self, point)
-  def __str__(self):
-    return str("(" + str(self.X) + "," + str(self.Y) + "," + str(self.Z) + ")")
-  def __repr__(self):
-    return str("(" + str(self.X) + "," + str(self.Y) + "," + str(self.Z) + ")")
 
 global boxWidth 
 global rightBoxRef
@@ -814,6 +805,35 @@ class GCodeSender:
         fStr = " F" + str(feedRate)
         self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
 
+    def send_drawnPoints(self, points3D):
+      cncPaths = cncPathsClass(points3D        = points3D,
+                               pointsPerCurve  = 30,
+                               distPerTab      = 8,
+                               tabWidth        = 0.25,
+                               cutterDiameter  = 0.25
+                        )
+      cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
+                                           materialThickness  = 0.75,
+                                           depthBelowMaterial = 0.1,
+                                           depthPerPass       = 0.157,
+                                           cutFeedRate        = 100,
+                                           safeHeight         = 1.0,
+                                           tabHeight          = 0.12
+                                          )
+      cncGcodeGenerator.Generate()
+      self.set_inches()
+      self.absolute_move(z = -0.25)
+      for gCode in cncGcodeGenerator.gCodes:
+          self.gerbil.stream(gCode + "\n")
+
+      self.absolute_move(z = -0.25)
+
+    def set_inches(self):
+        self.gerbil.send_immediately("G20\n")
+
+    def set_mm(self):
+        self.gerbil.send_immediately("G21\n")
+
     def send_file(self, xOffset, yOffset, rotation):
         #Set to inches
         self.gerbil.send_immediately("G20\n")
@@ -830,7 +850,7 @@ class GCodeSender:
         self.gerbil.send_immediately("G68 X0 Y0 R" + str(deg) + "\n")
 
         #Set back to mm, typically the units g code assumes
-        self.gerbil.send_immediately("G21\n")
+        self.set_mm()
 
         ZFound = False
         with open(self.gCodeFile, 'r') as fh:
