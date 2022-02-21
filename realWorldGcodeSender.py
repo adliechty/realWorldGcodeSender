@@ -171,6 +171,42 @@ def pathToPoints3D(path, pointsPerCurve):
     prevEnd = curPoints3D[-1]
   return points3D
 
+def centers(x1, y1, x2, y2, r):
+    q = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    x3 = (x1 + x2) / 2
+    y3 = (y1 + y2) / 2
+
+    xx = (r ** 2 - (q / 2) ** 2) ** 0.5 * (y1 - y2) / q
+    yy = (r ** 2 - (q / 2) ** 2) ** 0.5 * (x2 - x1) / q
+    return ((x3 + xx, y3 + yy), (x3 - xx, y3 - yy))
+
+def arcToPoints2(startX, startY, endX, endY, radius, clockWise, mouseX, mouseY):
+    points = []
+    center1, center2 = centers(startX, startY, endX, endY, radius)
+    dist1 = math.dist([mouseX, mouseY], center1)
+    dist2 = math.dist([mouseX, mouseY], center1)
+    if dist1 < dist2:
+        centerX = center1[0]
+        centerY = center1[1]
+    else:
+        centerX = center2[0]
+        centerY = center2[1]
+
+    startAngle = math.atan2(startY - centerY, startX - centerX)
+    endAngle   = math.atan2(endY   - centerY, endX   - centerX)
+    print("center: " + str(centerX) + "," + str(centerY))
+    print("start: " + str(startX) + "," + str(startY))
+    print("end: " + str(endX) + "," + str(endY))
+    print("angles: " + str(startAngle) + "," + str(endAngle))
+    for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
+        x = math.cos(angle) * radius + centerX
+        y = math.sin(angle) * radius + centerY
+        points.append(Point3D(x, y))
+    x = math.cos(endAngle) * radius + centerX
+    y = math.sin(endAngle) * radius + centerY
+    points.append(Point3D(x, y))
+    return points
+
 def arcToPoints(startX, startY, endX, endY, i, j, clockWise, curZ):
     points = []
     centerX = startX + i
@@ -178,6 +214,7 @@ def arcToPoints(startX, startY, endX, endY, i, j, clockWise, curZ):
     radius = math.dist([centerX, centerY], [startX, startY])
     startAngle = math.atan2(startY - centerY, startX - centerX)
     endAngle   = math.atan2(endY   - centerY, endX   - centerX)
+    print("end: " + str(endX) + "," + str(endY))
     for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
         x = math.cos(angle) * radius + centerX
         y = math.sin(angle) * radius + centerY
@@ -216,6 +253,9 @@ class OverlayGcode:
         self.cv2Overhead = cv2.cvtColor(cv2Overhead, cv2.COLOR_BGR2RGB)
         self.move = False
         self.previewNextDrawnPoint = False
+
+        self.startArc = None
+        self.endArc = None
 
         fig, ax = plt.subplots()
         fig.tight_layout()
@@ -417,17 +457,32 @@ class OverlayGcode:
       self.mouseX = event.xdata
       self.mouseY = event.ydata
       if self.previewNextDrawnPoint:
-        x, y = self._get_mouse_pos_inches()
-        #provision to preview first point
-        firstPoint = False
-        if len(self.drawnPoints) == 0:
-          self.drawnPoints.append(Point3D(x, y, 0))
-          firstPoint = True
-        self.drawnPoints.append(Point3D(x, y, 0))
-        self.updateOverlay()
-        self.drawnPoints.pop()
-        if firstPoint:
-          self.drawnPoints.pop()
+        # if finishing drawing an arch, then preview that instead of a line
+        if self.startArc != None and self.endArc != None:
+            x, y = self._get_mouse_pos_inches()
+            radius = math.dist([x,y], [self.startArc.X, self.startArc.Y])
+            newPoints = arcToPoints2(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, radius, True, x, y)
+            print(newPoints)
+            #newPoints = arcToPoints(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x - self.startArc.X, y - self.startArc.Y, False, 0)
+            numNewPoints = len(newPoints)
+            self.drawnPoints.extend(newPoints)
+            self.updateOverlay()
+            #remove added points as this is just a preview
+            del self.drawnPoints[-numNewPoints:]
+            
+
+        else:
+            x, y = self._get_mouse_pos_inches()
+            #provision to preview first point
+            firstPoint = False
+            if len(self.drawnPoints) == 0:
+              self.drawnPoints.append(Point3D(x, y, 0))
+              firstPoint = True
+            self.drawnPoints.append(Point3D(x, y, 0))
+            self.updateOverlay()
+            self.drawnPoints.pop()
+            if firstPoint:
+              self.drawnPoints.pop()
 
 
     def _get_mouse_pos_inches(self):
@@ -459,6 +514,19 @@ class OverlayGcode:
             self.drawnPoints.append(Point3D(x, y, 0))
             self.updateOverlay()
             print(self.drawnPoints)
+        elif event.key == 'c':
+          if self.startArc == None:
+              self.startArc = self.drawnPoints[-1]#Point3D(x, y)
+              self.endArc = Point3D(x, y)
+          else:
+              print(self.startArc)
+              print(self.endArc)
+              newPoints = arcToPoints(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x- self.startArc.X, y- self.startArc.Y, False, 0)
+              print("newPoints:" + str(newPoints))
+              self.drawnPoints.extend(newPoints)
+              self.startArc = None
+              self.endArc = None
+              self.updateOverlay()
         # erase one drawn point
         elif event.key == 'e':
             if len(self.drawnPoints) > 0:
@@ -468,17 +536,21 @@ class OverlayGcode:
         elif event.key == 'E':
             self.drawnPoints = []
             self.updateOverlay()
-        elif event.key == 'c':
+        elif event.key == 'C':
             self.sender.send_drawnPoints(self.drawnPoints)
         elif event.key == 'shift':
             self.shiftHeld = True
             print("shift")
 
         # if a non drawing key was pushed then exit drawing preveiw mode
-        if event.key != 'd' and event.key.lower() != 'e' and event.key != 'shift':
+        if event.key != 'd' and event.key.lower() != 'e' and event.key != 'shift' and event.key != 'c':
             if self.previewNextDrawnPoint:
                 self.previewNextDrawnPoint = False
                 self.updateOverlay()
+        if event.key != 'c':
+            self.startArc = None
+            self.endArc = None
+
 
     def onclick(self, event):
       self.move = False
@@ -705,8 +777,6 @@ class GCodeSender:
     def home_machine(self):
         self.gerbil.send_immediately("$H\n")
         pass
-    def set_inches(self):
-        self.gerbil.send_immediately("G20\n") # Inches
 
     def set_work_coord_offset(self, x = None, y = None, z = None):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
