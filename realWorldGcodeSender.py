@@ -26,6 +26,7 @@ sys.path.insert(1, '../svgToGCode/')
 from svgToGCode import cncPathsClass
 from svgToGCode import cncGcodeGeneratorClass
 from svgToGCode import Point3D
+from svgToGCode import signedArea
 
 from gerbil import Gerbil
 import serial.tools.list_ports
@@ -180,28 +181,56 @@ def centers(x1, y1, x2, y2, r):
     yy = (r ** 2 - (q / 2) ** 2) ** 0.5 * (x2 - x1) / q
     return ((x3 + xx, y3 + yy), (x3 - xx, y3 - yy))
 
-def arcToPoints2(startX, startY, endX, endY, radius, clockWise, mouseX, mouseY):
-    points = []
-    center1, center2 = centers(startX, startY, endX, endY, radius)
-    dist1 = math.dist([mouseX, mouseY], center1)
-    dist2 = math.dist([mouseX, mouseY], center1)
-    if dist1 < dist2:
-        centerX = center1[0]
-        centerY = center1[1]
-    else:
-        centerX = center2[0]
-        centerY = center2[1]
+def define_circle(p1, p2, p3):
+    """
+    Returns the center and radius of the circle passing the given 3 points.
+    In case the 3 points form a line, returns (None, infinity).
+    """
+    temp = p2[0] * p2[0] + p2[1] * p2[1]
+    bc = (p1[0] * p1[0] + p1[1] * p1[1] - temp) / 2
+    cd = (temp - p3[0] * p3[0] - p3[1] * p3[1]) / 2
+    det = (p1[0] - p2[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p2[1])
 
+    if abs(det) < 1.0e-6:
+        return (None, np.inf)
+
+    # Center of circle
+    cx = (bc*(p2[1] - p3[1]) - cd*(p1[1] - p2[1])) / det
+    cy = ((p1[0] - p2[0]) * cd - (p2[0] - p3[0]) * bc) / det
+
+    radius = np.sqrt((cx - p1[0])**2 + (cy - p1[1])**2)
+    return ((cx, cy), radius)
+
+def arcToPoints2(startX, startY, endX, endY, midX, midY):
+    points = []
+    (centerX, centerY), radius = define_circle((startX, startY), (midX, midY), (endX, endY))
     startAngle = math.atan2(startY - centerY, startX - centerX)
     endAngle   = math.atan2(endY   - centerY, endX   - centerX)
+    counterClockWise = 1
+    if signedArea([Point3D(startX, startY), Point3D(midX, midY), Point3D(endX, endY)]) < 0:
+        counterClockWise = -1
     print("center: " + str(centerX) + "," + str(centerY))
     print("start: " + str(startX) + "," + str(startY))
     print("end: " + str(endX) + "," + str(endY))
     print("angles: " + str(startAngle) + "," + str(endAngle))
-    for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
+    print("counterClockWise: " + str(counterClockWise))
+    #for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
+    angle = startAngle
+    stop = False
+    while stop == False:
         x = math.cos(angle) * radius + centerX
         y = math.sin(angle) * radius + centerY
         points.append(Point3D(x, y))
+        prevAngle = angle
+        angle = (angle +  counterClockWise * 0.1) % (2 * math.pi)
+        angleDiff = ((endAngle - angle + 3 * math.pi) % (2 * math.pi)) - math.pi
+        #time.sleep(0.05)
+        #print(angleDiff)
+        if counterClockWise == -1:
+          stop = angleDiff <= 0.1 and angleDiff >=0
+        else:
+          stop = angleDiff >= -0.1 and angleDiff <= 0
+
     x = math.cos(endAngle) * radius + centerX
     y = math.sin(endAngle) * radius + centerY
     points.append(Point3D(x, y))
@@ -261,6 +290,7 @@ class OverlayGcode:
         fig.tight_layout()
         plt.subplots_adjust(bottom=0.01, right = 0.99)
         plt.axis([self.bedViewSizePixels,0, self.bedViewSizePixels, 0])
+        plt.rcParams['keymap.back'].remove('c') # we use c for circle
         #Generate matplotlib plot from opencv image
         self.matPlotImage = plt.imshow(self.cv2Overhead)
         ###############################################
@@ -461,7 +491,7 @@ class OverlayGcode:
         if self.startArc != None and self.endArc != None:
             x, y = self._get_mouse_pos_inches()
             radius = math.dist([x,y], [self.startArc.X, self.startArc.Y])
-            newPoints = arcToPoints2(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, radius, True, x, y)
+            newPoints = arcToPoints2(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x, y)
             print(newPoints)
             #newPoints = arcToPoints(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x - self.startArc.X, y - self.startArc.Y, False, 0)
             numNewPoints = len(newPoints)
@@ -521,7 +551,7 @@ class OverlayGcode:
           else:
               print(self.startArc)
               print(self.endArc)
-              newPoints = arcToPoints(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x- self.startArc.X, y- self.startArc.Y, False, 0)
+              newPoints = arcToPoints2(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x, y)
               print("newPoints:" + str(newPoints))
               self.drawnPoints.extend(newPoints)
               self.startArc = None
