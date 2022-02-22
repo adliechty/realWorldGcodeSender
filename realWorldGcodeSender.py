@@ -282,6 +282,8 @@ class OverlayGcode:
         self.cv2Overhead = cv2.cvtColor(cv2Overhead, cv2.COLOR_BGR2RGB)
         self.move = False
         self.previewNextDrawnPoint = False
+        self.mouseX = 0
+        self.mouseY = 0
 
         self.startArc = None
         self.endArc = None
@@ -784,6 +786,7 @@ class GCodeSender:
         self.gerbil.cnect("COM4", 115200)
         self.gerbil.poll_start()
         self.gCodeFile = gCodeFile
+        self.set_inches()
 
 
 
@@ -814,7 +817,7 @@ class GCodeSender:
 
     def probe(self, x = None, y = None, z = None, feed = 5.9):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
-        self.gerbil.send_immediately("G38.2 " + xStr + yStr + zStr + "F" + feed + "\n")
+        self.gerbil.send_immediately("G38.2 " + xStr + yStr + zStr + " F" + str(feed) + "\n")
         M114Resp = self.waitOnGCodeComplete("PRB")
 
     def zero_on_workpice(self, refPoints):
@@ -824,11 +827,12 @@ class GCodeSender:
         self.flushGcodeRespQue()
         self.set_inches()
         time.sleep(1)
-        self.absolute_move(None, None, -0.25, feedRate = 50) # Move close to Z limit
+        print("***************************************1")
+        self.absolute_move(None, None, -0.25, feed = 50) # Move close to Z limit
+        print("***************************************2")
         self.waitOnGCodeComplete("G53")
-        print("Complete")
+        print("***************************************3")
         time.sleep(1)
-        return
 
         #Rapid traverse to above reference plate
         print("avgXY: " + str(avgX) + " " + str(avgY))
@@ -836,15 +840,21 @@ class GCodeSender:
         time.sleep(1)
 
         #Move down medium speed to reference plate
+        print("***************************************4")
         self.set_work_coord_offset(z = 0) # probe ony works on work coordinage system, set it to 0 so we know where we are in that
-        self.probe(z = -3.75, feed = 5.9) # move down by 3.75" until probe hit
+        time.sleep(1)
+        print("***************************************5")
+        self.probe(z = -2.75, feed = 5.9) # move down by 2.75" until probe hit
+        print("***************************************6")
         self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
+        print("***************************************7")
+        time.sleep(1)
 
         #Move up, then slowly to reference plate
         self.work_offset_move(z = 0.25, feed=100) # Move just above reference plate
-        self.probe(z = 0.05, feed = 1.5)
+        self.probe(z = -0.1, feed = 1.5)
         self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
-        self.work_offset_move(z = 1.0, feed=100)
+        self.absolute_move(None, None, -0.25, feed = 50) # Move close to Z limit
 
         #Move up, then move to side of reference plate
         #Move down, then over to side of reference plate
@@ -860,7 +870,7 @@ class GCodeSender:
     def waitOnGCodeComplete(self, gCode):
       resp = None
       while resp == None:
-        if len(self.dataList) == 0:
+        while len(self.dataList) == 0:
           self.event.wait()
         print("curData:" + str(self.dataList[0]))
         for data in self.dataList:
@@ -882,12 +892,12 @@ class GCodeSender:
         if x == None:
             xStr = ""
         else:
-            xStr = " X" + str(X)
+            xStr = " X" + str(x)
 
         if y == None:
             yStr = ""
         else:
-            yStr = " Y" + str(z)
+            yStr = " Y" + str(y)
 
         if z == None:
             zStr = ""
@@ -895,14 +905,15 @@ class GCodeSender:
             zStr = " Z" + str(z)
         return xStr, yStr, zStr
 
-    def absolute_move(self, x = None, y = None , z = None, feedRate = 100):
+    def absolute_move(self, x = None, y = None , z = None, feed = 100):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
-        fStr = " F" + str(feedRate)
+        fStr = " F" + str(feed)
+        self.set_inches()
         self.gerbil.send_immediately("G53 G1" + xStr + yStr + zStr + fStr + "\n")
 
-    def work_offset_move(self, x = None, y = None , z = None, feedRate = 100):
+    def work_offset_move(self, x = None, y = None , z = None, feed = 100):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
-        fStr = " F" + str(feedRate)
+        fStr = " F" + str(feed)
         self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
 
     def send_drawnPoints(self, points3D):
@@ -935,8 +946,8 @@ class GCodeSender:
         self.gerbil.send_immediately("G21\n")
 
     def send_file(self, xOffset, yOffset, rotation):
-        #Set to inches
-        self.gerbil.send_immediately("G20\n")
+        #Set to inches for offset and rotations
+        self.set_inches()
 
         ##########################################
         #Offset work to desired offset
@@ -1061,7 +1072,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, True)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, disableSender = False)
 
 ########################################
 # Detect box location in overhead image
