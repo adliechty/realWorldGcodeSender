@@ -536,7 +536,8 @@ class OverlayGcode:
         elif event.key == 'z':
             #Find X, Y, and Z position of the aluminum reference block on the work piece
             #sepcify the X and Y estimated position of the reference block
-            self.sender.zero_on_workpice(self.refPoints)
+            self.workspaceZero = self.sender.zero_on_workpice(self.refPoints)
+            print("workspaceZero: " + str(self.workspaceZero))
 
         elif event.key == 'm':
             self.sender.absolute_move(x, y)
@@ -830,6 +831,13 @@ class GCodeSender:
         #indicate callback is done
         self.event.set()
 
+    def get_absolute_pos(self):
+        self.gerbil.send_immediately("?\n")
+        resp = self.waitOnGCodeComplete(">")
+        m = re.match("<(.*?),MPos:(.*?),WPos:(.*?)>", resp)
+        mpos_parts = m.group(2).split(",")
+        return (float(mpos_parts[0]), float(mpos_parts[1]), float(mpos_parts[2]))
+
     def home_machine(self):
         self.gerbil.send_immediately("$H\n")
         pass
@@ -859,9 +867,12 @@ class GCodeSender:
 
         #Move up, then slowly to reference plate
         self.work_offset_move(z = 0.25, feed=100) # Move just above reference plate
-        self.probe(z = -0.1, feed = 1.5)
+        xyz = self.probe(z = -0.1, feed = 1.5)
         self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
         self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+        # return z height of the probe
+        return xyz[2]
+
 
     def probeXYSequence(self, plateAngle):
         # Firxt xAxis then yAxis
@@ -882,13 +893,16 @@ class GCodeSender:
                 # Move below touch plate
                 self.work_offset_move(z = -0.1, feed=100)
                 # Probe to the touch plate
-                self.probe(x = math.cos(angle) * probeToDist, y = math.sin(angle) * probeToDist, feed=5.9)
+                refPoint = self.probe(x = math.cos(angle) * probeToDist, y = math.sin(angle) * probeToDist, feed=5.9)
                 # set this as new side of touch plate
                 self.set_work_coord_offset(x = math.cos(angle) * plateWidth * 0.5 , y = math.sin(angle) * plateWidth * 0.5)
 
-            # Move away from plate and up
+            # Move away from plate and up, then to center of touchplate
             self.work_offset_move(x = math.cos(angle) * secSafeDist, y = math.sin(angle) * secSafeDist, feed = 100)
             self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+            self.work_offset_move(x = 0.0, y = 0.0)
+            return self.get_absolute_pos()[0:1]
+
 
     def probeAngleOfTouchPlate(self, estPlateAngle):
         plateWidth = 2.0 # total width of touch plate...half of this is distance to center of touch plate
@@ -936,13 +950,15 @@ class GCodeSender:
 
     def probeSequence(self, estPlateAngle):
         #function assumes spindle is directly above probe plate in estimated middle
+        #function returns x, y, z position of center top of plate
 
         # First Zero out work coord offset with best we have thus far
         self.set_work_coord_offset(x=0, y=0, z = 0) # probe ony works on work coordinage system, set it to 0 so we know where we are in that
         # first get Z height right
-        self.probeZSequence()
+        z = self.probeZSequence()
         plateAngle = self.probeAngleOfTouchPlate(estPlateAngle)
-        self.probeXYSequence(plateAngle)
+        xy =  self.probeXYSequence(plateAngle)
+        return xy.append(z)
             
         
     def probeYSequence(self):
@@ -959,7 +975,7 @@ class GCodeSender:
 
         print("avgXY: " + str(avgX) + " " + str(avgY))
         #first test out zero angle, then test out actual angle
-        self.probeSequence(0)
+        return self.probeSequence(0)
         #self.probeSequence(angle)
 
     def waitOnGCodeComplete(self, gCode):
