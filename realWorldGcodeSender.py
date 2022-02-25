@@ -818,7 +818,12 @@ class GCodeSender:
     def probe(self, x = None, y = None, z = None, feed = 5.9):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
         self.gerbil.send_immediately("G38.2 " + xStr + yStr + zStr + " F" + str(feed) + "\n")
-        M114Resp = self.waitOnGCodeComplete("PRB")
+        PrbResp = self.waitOnGCodeComplete("PRB")
+        # Example output:  '[PRB:-0.1965,-0.1965,-2.0697:1]'
+        tmp = PrbResp.split("PRB:")[1]
+        tmp = tmp.split(":1")[0]
+        numbers = tmp.split(",")
+        return [float(x) for x in a]
 
     def probeZSequence(self):
         #Move down medium speed to reference plate
@@ -836,6 +841,7 @@ class GCodeSender:
         self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
 
     def probeXYSequence(self, plateAngle):
+        # Firxt xAxis then yAxis
         for axisAngle in [0, math.pi / 2.0]:
             angle = axisAngle + plateAngle
             
@@ -873,36 +879,35 @@ class GCodeSender:
         self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         # Move to side of touch plate and down a quarter of the plate width
         
+        # this routine does not adjust work offset, so need to always be conservative
         #Probe down a quarter of touch plate first
         #once medium speed, once slow speed
-        for feed, dist in zip([5.9, 1.5], [firstSafeDist, secSafeDist]):
+        for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
             self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                                   y = math.sin(angle) * dist + math.sin(angle - math.pi/2.0), feed=100)
             # Move below touch plate
             self.work_offset_move(z = -0.1, feed=100)
             # Probe to the touch plate
-            self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                       y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0), feed=feed)
-            ref1X, ref1Y = self.get_cur_work_offset()
+            ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
+                              y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0), feed=feed)
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
-        for feed, dist in zip([5.9, 1.5], [firstSafeDist, secSafeDist]):
+        for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
             self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                                   y = math.sin(angle) * dist + math.sin(angle - math.pi/2.0), feed=100)
             # Move below touch plate
             self.work_offset_move(z = -0.1, feed=100)
             # Probe to the touch plate
-            self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                       y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0), feed=feed)
-            ref2X, ref2Y = self.get_cur_work_offset()
+            ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
+                              y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0), feed=feed)
         
         # Move away from reference plate and up
         self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * firstSafeDist + math.sin(angle - math.pi/2.0), feed=100)
         self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
 
-        yAxisAngle = math.atan2(ref2Y - ref1Y, ref2X - ref1X)
+        yAxisAngle = math.atan2(ref2[1] - ref1[1], ref2[0] - ref1[0])
         xAxisAngle = yAxisAngle - math.pi / 2.0 % (2 * math.pi)
         return xAxisAngle
 
@@ -926,11 +931,8 @@ class GCodeSender:
         self.flushGcodeRespQue()
         self.set_inches()
         self.absolute_move(None, None, -0.25, feed = 50) # Move close to Z limit
-        self.waitOnGCodeComplete("G53")
 
-        #Rapid traverse to above reference plate
         print("avgXY: " + str(avgX) + " " + str(avgY))
-        #self.absolute_move(x=avgX, y=avgY)
         self.probeSequence(0)
 
     def waitOnGCodeComplete(self, gCode):
