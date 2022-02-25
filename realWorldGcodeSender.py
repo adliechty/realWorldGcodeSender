@@ -409,6 +409,9 @@ class OverlayGcode:
 
     def set_ref_loc(self, refPoints):
         self.refPoints = refPoints
+        print("Ref Points = " + str(refPoints))
+        angle = getBoxAngle(refPoints)
+        print("Angle: " + str(angle * 180 / math.pi))
         
     def scalePoints(self, points, scaleX, scaleY):
       for point in points:
@@ -618,6 +621,26 @@ def crop_half_vertically(img):
   right = img[:, width_cutoff:]
   return left, right
 
+def getBoxAngle(points):
+    adjacentPoints = []
+    maxDistance = 0
+    for point in points[1:]:
+        maxDistance = max(maxDistance, math.dist(point, points[0]))
+    for point in points[1:]:
+        # if an adjacent point (not across from box)
+        if math.dist(point, points[0]) != maxDistance:
+            print("adjacen points:")
+            print(points[0])
+            print(point)
+            angle = math.atan2(point[1] - points[0][1], point[0] - points[0][0])
+            break
+    print(angle * 180 / math.pi)
+    # a square is square, so we will pick one of the 4 angles 0, + 90, +180, or +270
+    if angle < 0:
+        angle = angle + math.pi
+    if angle >= math.pi / 2:
+        angle = angle - math.pi / 2
+    return angle
 
 def sortBoxPoints(points, rightSide = True):
   #First sort by X
@@ -927,13 +950,17 @@ class GCodeSender:
     def zero_on_workpice(self, refPoints):
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
+        angle = getBoxAngle(refPoints)
+
 
         self.flushGcodeRespQue()
         self.set_inches()
         self.absolute_move(None, None, -0.25, feed = 50) # Move close to Z limit
 
         print("avgXY: " + str(avgX) + " " + str(avgY))
+        #first test out zero angle, then test out actual angle
         self.probeSequence(0)
+        #self.probeSequence(angle)
 
     def waitOnGCodeComplete(self, gCode):
       resp = None
@@ -1078,10 +1105,10 @@ gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 # Get aruco box information
 ########################################
 boxes, ids, rejectedImgPoints = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_100))
-print("boxes")
-print(boxes)
-print("ids")
-print(ids)
+#print("boxes")
+#print(boxes)
+#print("ids")
+#print(ids)
 
 pixelLoc = [None]*2
 locations = [None]*2
@@ -1140,7 +1167,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, disableSender = False)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, disableSender = True)
 
 ########################################
 # Detect box location in overhead image
@@ -1148,12 +1175,21 @@ GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, disableSender = False)
 #Change overhead image to gray for box detection
 refPixelLoc    = get_id_loc(frame, boxes, ids, 66)
 refPhysicalLoc = cv2.perspectiveTransform(refPixelLoc.reshape(-1,1,2), bedPixelToPhysicalLoc)
-bedPercent = refPhysicalLoc / [frame.shape[1], frame.shape[0]]
-bedLoc = []
-for a in bedPercent:
-    bedLoc.append(a[0] * [bedSize.X, bedSize.Y])
-print("Bed Loc: " + str(bedLoc))
-GCodeOverlay.set_ref_loc(bedLoc)
+touchPlateLocPercent = refPhysicalLoc / [frame.shape[1], frame.shape[0]]
+touchPlateLoc = []
+for a in touchPlateLocPercent:
+    touchPlateLoc.append(a[0] * [bedSize.X, bedSize.Y])
+print("")
+print("")
+print("")
+print("")
+print("")
+print("")
+print("")
+print("")
+print("")
+print("Touch Plate Loc: " + str(touchPlateLoc))
+GCodeOverlay.set_ref_loc(touchPlateLoc)
 
 ######################################################################
 # Create a G Code sender now that overlay is created
