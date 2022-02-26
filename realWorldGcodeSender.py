@@ -270,7 +270,7 @@ def rotate(origin, point, angle):
 # OverlayGcode class
 ####################################################################################
 class OverlayGcode:
-    def __init__(self, cv2Overhead, gCodeFile, disableSender = True):
+    def __init__(self, cv2Overhead, gCodeFile, enableSender = True):
         global bedViewSizePixels
         global bedSize
         
@@ -284,6 +284,7 @@ class OverlayGcode:
         self.previewNextDrawnPoint = False
         self.mouseX = 0
         self.mouseY = 0
+        self.camRefCenter = [0,0]
 
         self.startArc = None
         self.endArc = None
@@ -328,7 +329,7 @@ class OverlayGcode:
         cid = fig.canvas.mpl_connect('key_press_event', self.onkeypress)
 
         #Create object to handle controlling the CNC machine and sending the g codes to it
-        if disableSender == False:
+        if enableSender:
             self.sender = GCodeSender(gCodeFile)
         
 
@@ -409,6 +410,11 @@ class OverlayGcode:
 
     def set_ref_loc(self, refPoints):
         self.refPoints = refPoints
+        avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
+        avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
+        self.camRefCenter = [avgX, avgY]
+        # set measured ref plate location whenever reference plat is moved
+        self.refPlateMeasuredLoc = self.camRefCenter + [0]
         print("Ref Points = " + str(refPoints))
         angle = getBoxAngle(refPoints)
         print("Angle: " + str(angle * 180 / math.pi))
@@ -494,7 +500,7 @@ class OverlayGcode:
       if self.previewNextDrawnPoint:
         # if finishing drawing an arch, then preview that instead of a line
         if self.startArc != None and self.endArc != None:
-            x, y = self._get_mouse_pos_inches()
+            x, y = self._mouse_pos_inches()
             radius = math.dist([x,y], [self.startArc.X, self.startArc.Y])
             newPoints = arcToPoints2(self.startArc.X, self.startArc.Y, self.endArc.X, self.endArc.Y, x, y)
             print(newPoints)
@@ -507,7 +513,7 @@ class OverlayGcode:
             
 
         else:
-            x, y = self._get_mouse_pos_inches()
+            x, y = self._mouse_pos_inches()
             #provision to preview first point
             firstPoint = False
             if len(self.drawnPoints) == 0:
@@ -519,13 +525,16 @@ class OverlayGcode:
             if firstPoint:
               self.drawnPoints.pop()
 
-
-    def _get_mouse_pos_inches(self):
+    def _mouse_pos_inches(self):
       x = self.mouseX / self.bedViewSizePixels * self.bedSize.X
       y = self.mouseY / self.bedViewSizePixels * self.bedSize.Y
+      # Make reference plate measured center location in image be exact measured location
+      x = x - self.camRefCenter[0] + self.refPlateMeasuredLoc[0]
+      y = y - self.camRefCenter[0] + self.refPlateMeasuredLoc[1]
       return x, y
+
     def onkeypress(self, event):
-        x, y = self._get_mouse_pos_inches()
+        x, y = self._mouse_pos_inches()
         print(event.key)
         if   event.key == 's':
             self.sender.send_file(self.xOffset, self.yOffset, self.rotation)
@@ -536,8 +545,9 @@ class OverlayGcode:
         elif event.key == 'z':
             #Find X, Y, and Z position of the aluminum reference block on the work piece
             #sepcify the X and Y estimated position of the reference block
-            self.workspaceZero = self.sender.zero_on_workpice(self.refPoints)
-            print("workspaceZero: " + str(self.workspaceZero))
+            self.refPlateMeasuredLoc = self.sender.zero_on_refPlate(self.refPoints)
+            print("refPlateMeasuredLoc: " + str(self.refPlateMeasuredLoc))
+            print("camRefCenter: " + str(self.camRefCenter))
 
         elif event.key == 'm':
             self.sender.absolute_move(x, y)
@@ -963,7 +973,7 @@ class GCodeSender:
         
     def probeYSequence(self):
         pass
-    def zero_on_workpice(self, refPoints):
+    def zero_on_refPlate(self, refPoints):
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
         angle = getBoxAngle(refPoints)
@@ -1183,7 +1193,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, disableSender = True)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
 
 ########################################
 # Detect box location in overhead image
