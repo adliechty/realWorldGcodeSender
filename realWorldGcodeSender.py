@@ -526,6 +526,9 @@ class OverlayGcode:
               self.drawnPoints.pop()
 
     def _mouse_pos_inches(self):
+      print(self.mouseX)
+      print(self.bedViewSizePixels)
+      print(self.bedSize.X)
       x = self.mouseX / self.bedViewSizePixels * self.bedSize.X
       y = self.mouseY / self.bedViewSizePixels * self.bedSize.Y
       # Make reference plate measured center location in image be exact measured location
@@ -822,21 +825,28 @@ class GCodeSender:
         self.gCodeFile = gCodeFile
         self.set_inches()
 
+        self.plateHeight = 0.472441
+        self.plateWidth  = 2.75591
+        self.bitRadius   = 0.125
 
 
 
 
     def gerbil_callback(self, eventstring, *data):
         args = []
+        if eventstring != "on_read":
+            return
+        print()
+        print()
+        print("GERBIL CALLBACK: " + eventstring)
         for d in data:
             args.append(str(d))
-        print("GERBIL CALLBACK: event={} data={}".format(eventstring.ljust(30), ", ".join(args)))
+            print(d)
+        print("args    event={} data={}".format(eventstring.ljust(30), ", ".join(args)))
         self.curData = data
         self.curEvent = eventstring
         self.dataList.append(data)
         self.eventList.append(eventstring)
-        print(eventstring)
-        print(data)
 
         #indicate callback is done
         self.event.set()
@@ -861,61 +871,69 @@ class GCodeSender:
         self.gerbil.send_immediately("G38.2 " + xStr + yStr + zStr + " F" + str(feed) + "\n")
         PrbResp = self.waitOnGCodeComplete("PRB")
         # Example output:  '[PRB:-0.1965,-0.1965,-2.0697:1]'
+        print("PrbResp: " + str(PrbResp))
         tmp = PrbResp.split("PRB:")[1]
         tmp = tmp.split(":1")[0]
         numbers = tmp.split(",")
-        return [float(x) for x in a]
+        print("Numbers: " + str(numbers))
+        return [float(x) for x in numbers]
 
     def probeZSequence(self):
+        plateHeight = self.plateHeight
         #Move down medium speed to reference plate
         print("***************************************4")
         print("***************************************5")
         self.probe(z = -2.75, feed = 5.9) # move down by 2.75" until probe hit
         print("***************************************6")
-        self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
+        self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
         print("***************************************7")
 
         #Move up, then slowly to reference plate
-        self.work_offset_move(z = 0.25, feed=100) # Move just above reference plate
-        xyz = self.probe(z = -0.1, feed = 1.5)
-        self.set_work_coord_offset(z = 0) # Set actual 0 to probed location
-        self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+        self.work_offset_move(z = plateHeight + 0.25, feed=100) # Move just above reference plate
+        xyz = self.probe(z = plateHeight-0.1, feed = 1.5)
+        self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
+        self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         # return z height of the probe
-        return xyz[2]
+        return xyz[2] - plateHeight
 
 
     def probeXYSequence(self, plateAngle):
+        bitRadius = self.bitRadius
         # Firxt xAxis then yAxis
         for axisAngle in [0, math.pi / 2.0]:
             angle = axisAngle + plateAngle
             
-            plateWidth = 2.0 # total width of touch plate...half of this is distance to center of touch plate
+            plateHeight = self.plateHeight
+            plateWidth = self.plateWidth # total width of touch plate...half of this is distance to center of touch plate
             firstSafeDist = plateWidth * 0.75
             secSafeDist = plateWidth * 0.625 # can get a little closer second time as we already sensed edge of plate once
             probeToDist = plateWidth * 0.25
 
             # Move up
-            self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+            self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
             #once medium speed, once slow speed
             for feed, dist in zip([5.9, 1.5], [firstSafeDist, secSafeDist]):
                 # Move to side of touch plate
                 self.work_offset_move(x = math.cos(angle) * dist, y = math.sin(angle) * dist, feed=100)
                 # Move below touch plate
-                self.work_offset_move(z = -0.1, feed=100)
+                self.work_offset_move(z = plateHeight-0.1, feed=100)
                 # Probe to the touch plate
                 refPoint = self.probe(x = math.cos(angle) * probeToDist, y = math.sin(angle) * probeToDist, feed=5.9)
                 # set this as new side of touch plate
-                self.set_work_coord_offset(x = math.cos(angle) * plateWidth * 0.5 , y = math.sin(angle) * plateWidth * 0.5)
+                self.set_work_coord_offset(x = math.cos(angle) * (plateWidth * 0.5 + bitRadius) , \
+                                           y = math.sin(angle) * (plateWidth * 0.5 + bitRadius))
 
             # Move away from plate and up, then to center of touchplate
             self.work_offset_move(x = math.cos(angle) * secSafeDist, y = math.sin(angle) * secSafeDist, feed = 100)
-            self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+            self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
             self.work_offset_move(x = 0.0, y = 0.0)
-            return self.get_absolute_pos()[0:1]
+        return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius), \
+                refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius)]
 
 
     def probeAngleOfTouchPlate(self, estPlateAngle):
-        plateWidth = 2.0 # total width of touch plate...half of this is distance to center of touch plate
+        plateHeight = self.plateHeight
+        plateWidth = self.plateWidth # total width of touch plate...half of this is distance to center of touch plate
         firstSafeDist = plateWidth * 0.75
         secSafeDist = plateWidth * 0.625 # can get a little closer second time as we already sensed edge of plate once
         probeToDist = plateWidth * 0.25
@@ -923,7 +941,7 @@ class GCodeSender:
 
         angle = estPlateAngle 
         # Move up
-        self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+        self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         # Move to side of touch plate and down a quarter of the plate width
         
         # this routine does not adjust work offset, so need to always be conservative
@@ -931,31 +949,33 @@ class GCodeSender:
         #once medium speed, once slow speed
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
             self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                                  y = math.sin(angle) * dist + math.sin(angle - math.pi/2.0), feed=100)
+                                  y = math.sin(angle) * dist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=100)
             # Move below touch plate
-            self.work_offset_move(z = -0.1, feed=100)
+            self.work_offset_move(z = plateHeight-0.1, feed=100)
             # Probe to the touch plate
             ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                              y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0), feed=feed)
+                              y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=feed)
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
-            self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                                  y = math.sin(angle) * dist + math.sin(angle - math.pi/2.0), feed=100)
+            self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
+                                  y = math.sin(angle) * dist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=100)
             # Move below touch plate
-            self.work_offset_move(z = -0.1, feed=100)
+            self.work_offset_move(z = plateHeight - 0.1, feed=100)
             # Probe to the touch plate
-            ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                              y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0), feed=feed)
+            ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
+                              y = math.sin(angle) * probeToDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=feed)
         
         # Move away from reference plate and up
-        self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                              y = math.sin(angle) * firstSafeDist + math.sin(angle - math.pi/2.0), feed=100)
-        self.work_offset_move(z = 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+        self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
+                              y = math.sin(angle) * firstSafeDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=100)
+        self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
 
         yAxisAngle = math.atan2(ref2[1] - ref1[1], ref2[0] - ref1[0])
         xAxisAngle = yAxisAngle - math.pi / 2.0 % (2 * math.pi)
+        print("estPlateAngle:" + str(estPlateAngle))
+        print("xAxisAngle: " + str(xAxisAngle))
         return xAxisAngle
 
     def probeSequence(self, estPlateAngle):
@@ -968,6 +988,7 @@ class GCodeSender:
         z = self.probeZSequence()
         plateAngle = self.probeAngleOfTouchPlate(estPlateAngle)
         xy =  self.probeXYSequence(plateAngle)
+        print("xy: " + str(xy))
         return xy.append(z)
             
         
@@ -982,11 +1003,12 @@ class GCodeSender:
         self.flushGcodeRespQue()
         self.set_inches()
         self.absolute_move(None, None, -0.25, feed = 50) # Move close to Z limit
+        self.absolute_move(avgX, avgY, None,  feed = 50) # Move above estimated ref plate
 
         print("avgXY: " + str(avgX) + " " + str(avgY))
         #first test out zero angle, then test out actual angle
-        return self.probeSequence(0)
-        #self.probeSequence(angle)
+        #return self.probeSequence(0)
+        return self.probeSequence(angle)
 
     def waitOnGCodeComplete(self, gCode):
       resp = None
@@ -1001,9 +1023,13 @@ class GCodeSender:
         #Remove item from list
         self.dataList.pop(0)
         self.eventList.pop(0)
-        time.sleep(1)
-      print("Found")
-      return resp
+        #time.sleep(1)
+      print("resp: " + str(resp))
+      print("Found: " + str(resp[0]))
+      if isinstance(resp[0], dict):
+          return resp[0][gCode]
+      else:
+          return resp[0]
 
     def flushGcodeRespQue(self):
         self.dataList = []
