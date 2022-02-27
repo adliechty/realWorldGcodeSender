@@ -829,8 +829,8 @@ class GCodeSender:
         self.gCodeFile = gCodeFile
         self.set_inches()
 
-        self.plateHeight = 0.472441
-        self.plateWidth  = 2.75591
+        self.plateHeight = 0.472441 # 12mm
+        self.plateWidth  = 2.75591 # 70mm
         self.bitRadius   = 0.125
 
 
@@ -910,7 +910,7 @@ class GCodeSender:
             plateHeight = self.plateHeight
             plateWidth = self.plateWidth # total width of touch plate...half of this is distance to center of touch plate
             firstSafeDist = plateWidth * 0.75
-            secSafeDist = plateWidth * 0.625 # can get a little closer second time as we already sensed edge of plate once
+            secSafeDist = plateWidth * 0.5 + bitRadius + 0.1 # can get a little closer second time as we already sensed edge of plate once
             probeToDist = plateWidth * 0.25
 
             # Move up
@@ -930,7 +930,10 @@ class GCodeSender:
             # Move away from plate and up, then to center of touchplate
             self.work_offset_move(x = math.cos(angle) * secSafeDist, y = math.sin(angle) * secSafeDist, feed = 100)
             self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
-            self.work_offset_move(x = 0.0, y = 0.0)
+        
+        # we want work coord system to be center of knotch of touch plate, not center of touch plate itself.  Move there then make that zero.
+        self.work_offset_move(x = math.cos(angle + math.pi/4.0) * self.distToKnotch, y = math.sin(angle + math.pi/4.0) * self.distToKnotch)
+        self.set_work_coord_offset(x = 0, y = 0)
         return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius), \
                 refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius)]
 
@@ -951,25 +954,30 @@ class GCodeSender:
         # this routine does not adjust work offset, so need to always be conservative
         #Probe down a quarter of touch plate first
         #once medium speed, once slow speed
+        distAdjust = 0
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
-            self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                                  y = math.sin(angle) * dist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=100)
+            self.work_offset_move(x = math.cos(angle) * (dist - distAdjust) + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
+                                  y = math.sin(angle) * (dist - distAdjust) + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=100)
             # Move below touch plate
             self.work_offset_move(z = plateHeight-0.1, feed=100)
             # Probe to the touch plate
             ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=feed)
+            # move just 0.1" away from plate next probe since we know where idge roughy is now
+            distAdjust = math.dist([0,0], [ref1[0], ref1[1]) - 0.1
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
+        difAdjust = 0
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
-            self.work_offset_move(x = math.cos(angle) * dist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
-                                  y = math.sin(angle) * dist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=100)
+            self.work_offset_move(x = math.cos(angle) * (dist - distAdjust) + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
+                                  y = math.sin(angle) * (dist - distAdjust) + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=100)
             # Move below touch plate
             self.work_offset_move(z = plateHeight - 0.1, feed=100)
             # Probe to the touch plate
             ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=feed)
+            distAdjust = math.dist([0,0], [ref2[0], ref2[1]) - 0.1
         
         # Move away from reference plate and up
         self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
