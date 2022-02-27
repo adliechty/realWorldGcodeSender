@@ -47,10 +47,10 @@ global bedViewSizePixels
 #4.48"/ 6 = 0.7466667" per box
 
 boxWidth = 0.7466667
-#These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(2.0, -35.0, 2.3)
-leftBoxRef = Point3D(-37.0, -35.0, 3.2)
 bedSize = Point3D(-35.0, -35.0, -3.75)
+#These are distances from machine origin (0,0,0), right, back, upper corner.
+rightBoxRef = Point3D(2.0, -35.0, bedSize.Z + 2.3)
+leftBoxRef = Point3D(-37.0, -35.0, bedSize.Z + 3.2)
 bedViewSizePixels = 1400
 
 
@@ -832,6 +832,7 @@ class GCodeSender:
         self.plateHeight = 0.472441 # 12mm
         self.plateWidth  = 2.75591 # 70mm
         self.bitRadius   = 0.125
+        self.distToKnotch = (0.984252**2 + 0.984252**2) ** 0.5 #25mm both directions to the knotch
 
 
 
@@ -964,7 +965,7 @@ class GCodeSender:
             ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=feed)
             # move just 0.1" away from plate next probe since we know where idge roughy is now
-            distAdjust = math.dist([0,0], [ref1[0], ref1[1]) - 0.1
+            distAdjust = math.dist([0,0], [ref1[0], ref1[1]]) - 0.1
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
@@ -977,7 +978,7 @@ class GCodeSender:
             # Probe to the touch plate
             ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=feed)
-            distAdjust = math.dist([0,0], [ref2[0], ref2[1]) - 0.1
+            distAdjust = math.dist([0,0], [ref2[0], ref2[1]]) - 0.1
         
         # Move away from reference plate and up
         self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
