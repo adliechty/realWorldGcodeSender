@@ -49,8 +49,8 @@ global bedViewSizePixels
 boxWidth = 0.7466667
 bedSize = Point3D(-35.0, -35.0, -3.75)
 #These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(2.0, -35.0, bedSize.Z + 2.3)
-leftBoxRef = Point3D(-37.0, -35.0, bedSize.Z + 3.2)
+rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3)
+leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2)
 bedViewSizePixels = 1400
 
 
@@ -895,7 +895,7 @@ class GCodeSender:
 
         #Move up, then slowly to reference plate
         self.work_offset_move(z = plateHeight + 0.25, feed=100) # Move just above reference plate
-        xyz = self.probe(z = plateHeight-0.1, feed = 1.5)
+        xyz = self.probe(z = plateHeight-0.05, feed = 1.5)
         self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
         self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         # return z height of the probe
@@ -933,7 +933,7 @@ class GCodeSender:
             self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         
         # we want work coord system to be center of knotch of touch plate, not center of touch plate itself.  Move there then make that zero.
-        self.work_offset_move(x = math.cos(angle + math.pi/4.0) * self.distToKnotch, y = math.sin(angle + math.pi/4.0) * self.distToKnotch)
+        self.work_offset_move(x = math.cos(angle - math.pi/4.0) * self.distToKnotch, y = math.sin(angle - math.pi/4.0) * self.distToKnotch)
         self.set_work_coord_offset(x = 0, y = 0)
         return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius), \
                 refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius)]
@@ -965,7 +965,7 @@ class GCodeSender:
             ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=feed)
             # move just 0.1" away from plate next probe since we know where idge roughy is now
-            distAdjust = math.dist([0,0], [ref1[0], ref1[1]]) - 0.1
+            #distAdjust = math.dist([0,0], [ref1[0], ref1[1]]) - 0.1
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
@@ -978,7 +978,7 @@ class GCodeSender:
             # Probe to the touch plate
             ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=feed)
-            distAdjust = math.dist([0,0], [ref2[0], ref2[1]]) - 0.1
+            #distAdjust = math.dist([0,0], [ref2[0], ref2[1]]) - 0.1
         
         # Move away from reference plate and up
         self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
@@ -1002,7 +1002,7 @@ class GCodeSender:
         plateAngle = self.probeAngleOfTouchPlate(estPlateAngle)
         xy =  self.probeXYSequence(plateAngle)
         print("xy: " + str(xy))
-        return xy.append(z)
+        return xy + [z]
             
         
     def probeYSequence(self):
@@ -1232,7 +1232,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = False)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
 
 ########################################
 # Detect box location in overhead image
