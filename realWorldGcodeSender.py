@@ -42,10 +42,14 @@ global bedSize
 global bedViewSizePixels
 
 
-boxWidth = 1.25
+#right side, 2.3" from bed
+#left side 3.2" from bed
+#4.48"/ 6 = 0.7466667" per box
+
+boxWidth = 0.7466667
 #These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(2.0, -35.0, 1.0)
-leftBoxRef = Point3D(-37.0, -35.0, 1.0)
+rightBoxRef = Point3D(2.0, -35.0, 2.3)
+leftBoxRef = Point3D(-37.0, -35.0, 3.2)
 bedSize = Point3D(-35.0, -35.0, -3.75)
 bedViewSizePixels = 1400
 
@@ -1145,8 +1149,8 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-frame = cv2.imread('cnc4.jpeg')
-img = cv2.imread('cnc4.jpeg')
+frame = cv2.imread('cnc5.jpeg')
+img = cv2.imread('cnc5.jpeg')
 
 #######################################################################
 # Get grayscale image above threshold
@@ -1219,7 +1223,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = False)
 
 ########################################
 # Detect box location in overhead image
