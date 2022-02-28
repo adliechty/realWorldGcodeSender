@@ -297,6 +297,9 @@ class OverlayGcode:
         self.startArc = None
         self.endArc = None
 
+        self.refPlateMeasuredLoc = [0.0, 0.0]
+        self.camRefCenter = [0.0, 0.0]
+
         fig, ax = plt.subplots()
         fig.tight_layout()
         plt.subplots_adjust(bottom=0.01, right = 0.99)
@@ -416,8 +419,14 @@ class OverlayGcode:
         #self.scalePoints(self.points, 1 / 25.4, 1 / 25.4)
         self.updateOverlay()
 
-    def set_ref_loc(self, refPoints):
+    def set_ref_loc(self, refPixels):
+        print("refPixels: " + str(refPixels))
+
+        refPoints = []
+        for refPixel in refPixels:
+            refPoints.append( self._pixel_to_inches(refPixel[0], refPixel[1]))
         self.refPoints = refPoints
+
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
         self.camRefCenter = [avgX, avgY]
@@ -543,16 +552,18 @@ class OverlayGcode:
             if firstPoint:
               self.drawnPoints.pop()
 
-    def _mouse_pos_inches(self):
-      print(self.mouseX)
-      print(self.bedViewSizePixels)
-      x = self.mouseX / self.bedViewSizePixels * (leftBoxRef.X - rightBoxRef.X)
+    def _pixel_to_inches(self, x, y):
+      x = x / self.bedViewSizePixels * (leftBoxRef.X - rightBoxRef.X)
       x = x + rightBoxRef.X
-      y = self.mouseY / self.bedViewSizePixels * self.bedSize.Y
+      y = y / self.bedViewSizePixels * self.bedSize.Y
       # Make reference plate measured center location in image be exact measured location
       x = x - self.camRefCenter[0] + self.refPlateMeasuredLoc[0]
       y = y - self.camRefCenter[1] + self.refPlateMeasuredLoc[1]
       return x, y
+    def _mouse_pos_inches(self):
+      print(self.mouseX)
+      print(self.bedViewSizePixels)
+      return self._pixel_to_inches(self.mouseX, self.mouseY)
 
     def onkeypress(self, event):
         x, y = self._mouse_pos_inches()
@@ -1026,9 +1037,6 @@ class GCodeSender:
         print("xy: " + str(xy))
         return xy + [z]
             
-        
-    def probeYSequence(self):
-        pass
     def zero_on_refPlate(self, refPoints):
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
@@ -1180,8 +1188,9 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-frame = cv2.imread('cnc5.jpeg')
-img = cv2.imread('cnc5.jpeg')
+file = 'cnc8.jpg'
+frame = cv2.imread(file)
+img = cv2.imread(file)
 
 #######################################################################
 # Get grayscale image above threshold
@@ -1258,7 +1267,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = False)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
 
 ########################################
 # Detect box location in overhead image
@@ -1268,8 +1277,10 @@ refPixelLoc    = get_id_loc(frame, boxes, ids, 66)
 refPhysicalLoc = cv2.perspectiveTransform(refPixelLoc.reshape(-1,1,2), bedPixelToPhysicalLoc)
 touchPlateLocPercent = refPhysicalLoc / [frame.shape[1], frame.shape[0]]
 touchPlateLoc = []
+touchPlatePixels = []
 for a in touchPlateLocPercent:
     touchPlateLoc.append(a[0] * [bedSize.X, bedSize.Y])
+    touchPlatePixels.append(a[0] * [bedViewSizePixels, bedViewSizePixels] )
 print("")
 print("")
 print("")
@@ -1280,7 +1291,7 @@ print("")
 print("")
 print("")
 print("Touch Plate Loc: " + str(touchPlateLoc))
-GCodeOverlay.set_ref_loc(touchPlateLoc)
+GCodeOverlay.set_ref_loc(touchPlatePixels)
 
 ######################################################################
 # Create a G Code sender now that overlay is created
