@@ -42,14 +42,14 @@ global bedSize
 global bedViewSizePixels
 
 
-#right side, 2.3" from bed
-#left side 3.2" from bed
-#4.48"/ 6 = 0.7466667" per box
+#right side, 2.3975" from bed, 2.38" near wall.  0.326 from end of bed
+#left side 3.2" from bed.  3.1375 near wall.  0.3145" from end of bed
+#5.2195" / 7 = 0.745643" per box
 
-boxWidth = 0.7466667
+boxWidth = 0.745642857
 bedSize = Point3D(-35.0, -35.0, -3.75)
 #These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3)
+rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3975)
 leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2)
 bedViewSizePixels = 1400
 
