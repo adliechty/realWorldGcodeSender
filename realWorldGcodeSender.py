@@ -40,6 +40,8 @@ global rightBoxRef
 global leftBoxRef
 global bedSize
 global bedViewSizePixels
+global rightSlope
+global leftSlope
 
 
 #right side, 2.3975" from bed, 2.38" near wall.  0.326 from end of bed
@@ -51,9 +53,17 @@ bedSize = Point3D(-35.0, -35.0, -3.75)
 #These are distances from machine origin (0,0,0), right, back, upper corner.
 rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3975)
 leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2)
+
+#This is the height of the bottom box from the bed at the far end (near Y 0)
+#as the reference squares may not be perfectly level to the bed 
+rightBoxFarHeight = 2.38
+leftBoxFarHeight  = 3.1375
+
+#There are 20 boxes, slop is divided by 20
+rightSlope = (rightBoxFarHeight - (rightBoxRef.Z - bedSize.Z)) / 20.0
+leftSlope = (leftBoxFarHeight - (leftBoxRef.Z - bedSize.Z)) / 20.0
+
 bedViewSizePixels = 1400
-
-
 
 #First ID is upper right, which is most positive Z and most positice Y
 # Z, Y
@@ -213,11 +223,6 @@ def arcToPoints2(startX, startY, endX, endY, midX, midY):
     counterClockWise = 1
     if signedArea([Point3D(startX, startY), Point3D(midX, midY), Point3D(endX, endY)]) < 0:
         counterClockWise = -1
-    print("center: " + str(centerX) + "," + str(centerY))
-    print("start: " + str(startX) + "," + str(startY))
-    print("end: " + str(endX) + "," + str(endY))
-    print("angles: " + str(startAngle) + "," + str(endAngle))
-    print("counterClockWise: " + str(counterClockWise))
     #for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
     angle = startAngle
     stop = False
@@ -247,7 +252,6 @@ def arcToPoints(startX, startY, endX, endY, i, j, clockWise, curZ):
     radius = math.dist([centerX, centerY], [startX, startY])
     startAngle = math.atan2(startY - centerY, startX - centerX)
     endAngle   = math.atan2(endY   - centerY, endX   - centerX)
-    print("end: " + str(endX) + "," + str(endY))
     for angle in np.arange(startAngle, endAngle, (clockWise * -2 + 1) * 0.1):
         x = math.cos(angle) * radius + centerX
         y = math.sin(angle) * radius + centerY
@@ -423,6 +427,16 @@ class OverlayGcode:
         angle = getBoxAngle(refPoints)
         print("Angle: " + str(angle * 180 / math.pi))
         
+    
+    def phyPointsToPixels(self, transformedPoints):
+        global rightBoxRef, leftBoxRef
+
+        # Bed drawn from Y = 0 to Y = 35, but from X at left support beam and right support beam with ref boxes on them.
+        self.offsetPoints(transformedPoints, -rightBoxRef.X, 0)
+        self.scalePoints(transformedPoints, \
+                         self.bedViewSizePixels / (leftBoxRef.X - rightBoxRef.X), \
+                         self.bedViewSizePixels / self.bedSize.Y)
+
     def scalePoints(self, points, scaleX, scaleY):
       for point in points:
         point.X = point.X * scaleX
@@ -444,7 +458,7 @@ class OverlayGcode:
       yOff is in inches
       rotation is in degrees
       """
-      toolWidth = round(abs(0.25 * self.bedViewSizePixels / self.bedSize.X))
+      toolWidth = round(abs(0.25 * self.bedViewSizePixels / (leftBoxRef.X - rightBoxRef.X)))
       #convert to radians
       rotation = rotation * math.pi / 180
       overlay = image.copy()
@@ -456,7 +470,7 @@ class OverlayGcode:
       #Then rotate
       self.rotatePoints(transformedPoints, [xOff, yOff], rotation)
       #Then convert to pixel location
-      self.scalePoints(transformedPoints, self.bedViewSizePixels / self.bedSize.X, self.bedViewSizePixels / self.bedSize.Y)
+      self.phyPointsToPixels(transformedPoints)
       prevPoint = None
       for point, laserPower in zip(transformedPoints, self.laserPowers):
         newPoint = (int(point.X), int(point.Y))
@@ -465,7 +479,7 @@ class OverlayGcode:
         prevPoint = newPoint
 
       transformedPoints = deepcopy(self.drawnPoints)
-      self.scalePoints(transformedPoints, self.bedViewSizePixels / self.bedSize.X, self.bedViewSizePixels / self.bedSize.Y)
+      self.phyPointsToPixels(transformedPoints)
       prevPoint = None
       for point in transformedPoints:
         newPoint = (int(point.X), int(point.Y))
@@ -532,12 +546,12 @@ class OverlayGcode:
     def _mouse_pos_inches(self):
       print(self.mouseX)
       print(self.bedViewSizePixels)
-      print(self.bedSize.X)
-      x = self.mouseX / self.bedViewSizePixels * self.bedSize.X
+      x = self.mouseX / self.bedViewSizePixels * (leftBoxRef.X - rightBoxRef.X)
+      x = x + rightBoxRef.X
       y = self.mouseY / self.bedViewSizePixels * self.bedSize.Y
       # Make reference plate measured center location in image be exact measured location
       x = x - self.camRefCenter[0] + self.refPlateMeasuredLoc[0]
-      y = y - self.camRefCenter[0] + self.refPlateMeasuredLoc[1]
+      y = y - self.camRefCenter[1] + self.refPlateMeasuredLoc[1]
       return x, y
 
     def onkeypress(self, event):
@@ -615,15 +629,23 @@ class OverlayGcode:
       if event.x < 260 or self.move == True:
         return
       pixelsToOrigin = np.array([event.xdata, event.ydata])
+      print("event x,y: " + str(pixelsToOrigin))
+      print("mouse x,y: " + str([self.mouseX, self.mouseY]))
+      xIn, yIn = self._mouse_pos_inches()
       if event.button == MouseButton.RIGHT:
-          xIn = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
-          yIn = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
+          #xIn = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
+          #yIn = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
           self.rotation = math.atan2(yIn - self.yOffset, xIn - self.xOffset)
           self.rotation = self.rotation * 180 / math.pi
 
       else:
-          self.xOffset = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
-          self.yOffset = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
+          self.xOffset = xIn
+          self.yOffset = yIn
+          print("xin, yIn: " + str(xIn) + "," + str(yIn))
+          print(str(pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X) + "," + \
+                str(pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y))
+          #self.xOffset = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
+          #self.yOffset = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
       self.updateOverlay()
       self.xBox.set_val(str(self.xOffset))
       self.yBox.set_val(str(self.yOffset))
@@ -744,10 +766,10 @@ def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
           curLoc[0] = boxLoc[0] + 1
           curLoc[1] = boxLoc[1] + 0
         if rightSide:
-          curLoc[0] = curLoc[0] * boxWidth + rightBoxRef.Z
+          curLoc[0] = curLoc[0] * boxWidth + rightBoxRef.Z + curLoc[1] * rightSlope
           curLoc[1] = curLoc[1] * boxWidth + rightBoxRef.Y
         else:
-          curLoc[0] = curLoc[0] * boxWidth + leftBoxRef.Z
+          curLoc[0] = curLoc[0] * boxWidth + leftBoxRef.Z + curLoc[1] * leftSlope
           curLoc[1] = curLoc[1] * boxWidth + leftBoxRef.Y
         locations.append(curLoc)
 
@@ -1194,8 +1216,8 @@ for i in range(0, 2):
   ########################################
   #Determine forward and backward transformation through homography
   ########################################
-  pixelToPhysicalLoc[i], status = cv2.findHomography(np.array(pixelLoc[i]), np.array(locations[i]))
-  physicalToPixelLoc[i], status    = cv2.findHomography(np.array(locations[i]), np.array(pixelLoc[i]))
+  pixelToPhysicalLoc[i], status = cv2.findHomography(np.array(pixelLoc[i]),  np.array(locations[i]))
+  physicalToPixelLoc[i], status = cv2.findHomography(np.array(locations[i]), np.array(pixelLoc[i]))
 
   #############################################################
   # Draw vertical box on left and right vertical region of CNC
@@ -1208,7 +1230,11 @@ for i in range(0, 2):
 ##########################################################################
 # Get forward and backward homography from bed location to pixel location
 ##########################################################################
-bedPixelCorners = np.array([[float(frame.shape[1]),0.0],[float(frame.shape[1]),float(frame.shape[0])],[0.0,0.0],[0.0,float(frame.shape[0])]])
+#shape[0] is height.  shape[1] is width
+#PixelCorners are [height,0], height, width
+height = float(frame.shape[1])
+width  = float(frame.shape[0])
+bedPixelCorners = np.array([[height,0.0],[height,width],[0.0,0.0],[0.0,width]])
 refPixels = np.array([pixelsAtBed[0][1],pixelsAtBed[0][2],pixelsAtBed[1][1],pixelsAtBed[1][2]])
 bedPhysicalToPixelLoc, status    = cv2.findHomography(bedPixelCorners, refPixels)
 bedPixelToPhysicalLoc, status    = cv2.findHomography(refPixels, bedPixelCorners)
@@ -1232,7 +1258,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = False)
 
 ########################################
 # Detect box location in overhead image
