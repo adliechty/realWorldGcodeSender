@@ -790,7 +790,7 @@ def boxes_to_point_and_location_list(boxes, ids, image, rightSide = False):
         x= int(point[0])
         y= int(point[1])
         image = cv2.arrowedLine(image, (prevX,prevY), (x,y),
-                                (0,255,255), 5)
+                                (0,255,255), 3)
 
         prevX = x
         prevY = y
@@ -822,13 +822,6 @@ def generate_dest_locations(corners, image):
     prevX = x
     prevY = y
   return locations, image
-
-def pixel_loc_at_cnc_bed(phyToPixel):
-  global bedSize
-  points = np.array([[0,0],[bedSize.Z,0],[bedSize.Z,bedSize.Y],[0,bedSize.Y]])
-  return points, \
-         cv2.perspectiveTransform(points.reshape(-1,1,2), phyToPixel)
-
 
 def display_4_lines(pixels, frame, flip=False):
   line1 = tuple(pixels[0][0].astype(np.int))
@@ -1208,11 +1201,9 @@ boxes, ids, rejectedImgPoints = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictiona
 
 pixelLoc = [None]*2
 locations = [None]*2
-pixelToPhysicalLoc = [None]*2
-physicalToPixelLoc = [None]*2
+sideRefLocToOrigPixelLoc = [None]*2
 pixelsAtBed = [None]*2
-refPointsAtBed = [None]*2
-
+refBoxes = [leftBoxRef, rightBoxRef]
 ########################################
 # Determine vertical homography at left (i=0) and right (i=1) side of CNC machine
 ########################################
@@ -1225,33 +1216,33 @@ for i in range(0, 2):
   ########################################
   #Determine forward and backward transformation through homography
   ########################################
-  pixelToPhysicalLoc[i], status = cv2.findHomography(np.array(pixelLoc[i]),  np.array(locations[i]))
-  physicalToPixelLoc[i], status = cv2.findHomography(np.array(locations[i]), np.array(pixelLoc[i]))
+  sideRefLocToOrigPixelLoc[i], status = cv2.findHomography(np.array(locations[i]), np.array(pixelLoc[i]))
 
   #############################################################
   # Draw vertical box on left and right vertical region of CNC
   #############################################################
-  refPointsAtBed[i], pixelsAtBed[i] = pixel_loc_at_cnc_bed(physicalToPixelLoc[i])
+  points = np.array([[refBoxes[i].Z,0],[bedSize.Z,0],[bedSize.Z,bedSize.Y],[refBoxes[i].Z,bedSize.Y]])
+  #points = np.array([[refBoxes[i].Z,refBoxes[i].Y + 15.658499997],[bedSize.Z,refBoxes[i].Y + 15.658499997],[bedSize.Z,bedSize.Y],[refBoxes[i].Z,refBoxes[i].Y]])
+  pixelsAtBed[i] = cv2.perspectiveTransform(points.reshape(-1,1,2), sideRefLocToOrigPixelLoc[i])
   display_4_lines(pixelsAtBed[i], frame)
 
-  #out = cv2.perspectiveTransform(np.array([[32.8125*7,32.8125*1],[32.8125*8,32.8125*1],[32.8125*8,32.8125*2],[32.8125*7,32.8125*2]]).reshape(-1,1,2), backward)
-
-##########################################################################
-# Get forward and backward homography from bed location to pixel location
-##########################################################################
+####################################################################################################
+# Get forward and backward homography from simulated overhead Pixel location to Orig pixel location
+# Makes destination image same size as source image.  Reshaped later due to matplot lib speed limitations
+####################################################################################################
 #shape[0] is height.  shape[1] is width
 #PixelCorners are [height,0], height, width
 height = float(frame.shape[1])
 width  = float(frame.shape[0])
 bedPixelCorners = np.array([[height,0.0],[height,width],[0.0,0.0],[0.0,width]])
 refPixels = np.array([pixelsAtBed[0][1],pixelsAtBed[0][2],pixelsAtBed[1][1],pixelsAtBed[1][2]])
-bedPhysicalToPixelLoc, status    = cv2.findHomography(bedPixelCorners, refPixels)
-bedPixelToPhysicalLoc, status    = cv2.findHomography(refPixels, bedPixelCorners)
+bedPixelToOrigPixelLoc, status    = cv2.findHomography(bedPixelCorners, refPixels)
+origPixelToBedPixelLoc, status    = cv2.findHomography(refPixels, bedPixelCorners)
   
 #############################################################
 # Draw box on CNC bed
 #############################################################
-pixels = cv2.perspectiveTransform(bedPixelCorners.reshape(-1,1,2), bedPhysicalToPixelLoc)
+pixels = cv2.perspectiveTransform(bedPixelCorners.reshape(-1,1,2), bedPixelToOrigPixelLoc)
 display_4_lines(pixels, frame, flip=True)
 
 #############################################################
@@ -1265,16 +1256,16 @@ cv2.waitKey()
 # Warp perspective to perpendicular to bed view, create overlay calss
 ######################################################################
 gCodeFile = 'test.nc'
-cv2Overhead = cv2.warpPerspective(frame, bedPixelToPhysicalLoc, (frame.shape[1], frame.shape[0]))
+cv2Overhead = cv2.warpPerspective(frame, origPixelToBedPixelLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = False)
 
 ########################################
 # Detect box location in overhead image
 ########################################
 #Change overhead image to gray for box detection
 refPixelLoc    = get_id_loc(frame, boxes, ids, 66)
-refPhysicalLoc = cv2.perspectiveTransform(refPixelLoc.reshape(-1,1,2), bedPixelToPhysicalLoc)
+refPhysicalLoc = cv2.perspectiveTransform(refPixelLoc.reshape(-1,1,2), origPixelToBedPixelLoc)
 touchPlateLocPercent = refPhysicalLoc / [frame.shape[1], frame.shape[0]]
 touchPlateLoc = []
 touchPlatePixels = []
