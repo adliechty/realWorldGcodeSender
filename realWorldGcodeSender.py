@@ -617,7 +617,7 @@ class OverlayGcode:
         elif event.key == 'C':
             # offset G codes by workspace zero as G codes send relative to workspace offset
             offset = Point3D(-self.refPlateMeasuredLoc[0], \
-                             -self.refPlateMeasuredLoc[0])
+                             -self.refPlateMeasuredLoc[1])
             self.sender.send_drawnPoints(offset, self.drawnPoints)
         elif event.key == 'shift':
             self.shiftHeld = True
@@ -1000,7 +1000,7 @@ class GCodeSender:
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
-        difAdjust = 0
+        distAdjust = 0
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
             self.work_offset_move(x = math.cos(angle) * (dist - distAdjust) + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
                                   y = math.sin(angle) * (dist - distAdjust) + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=400)
@@ -1194,7 +1194,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-file = 'cnc8.jpg'
+file = 'cnc9.jpg'
 frame = cv2.imread(file)
 img = cv2.imread(file)
 
