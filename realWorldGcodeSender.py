@@ -923,10 +923,10 @@ class GCodeSender:
         print("***************************************7")
 
         #Move up, then slowly to reference plate
-        self.work_offset_move(z = plateHeight + 0.25, feed=100) # Move just above reference plate
+        self.work_offset_move(z = plateHeight + 0.1, feed=180) # Move just above reference plate
         xyz = self.probe(z = plateHeight-0.05, feed = 1.5)
         self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
-        self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+        self.work_offset_move(z = plateHeight + 0.5, feed=180) # Move just above reference plate, clearing lip on reference plate
         # return z height of the probe
         return xyz[0], xyz[1], xyz[2] - plateHeight
 
@@ -948,7 +948,7 @@ class GCodeSender:
             #once medium speed, once slow speed
             for feed, dist in zip([5.9, 1.5], [firstSafeDist, secSafeDist]):
                 # Move to side of touch plate
-                self.work_offset_move(x = math.cos(angle) * dist, y = math.sin(angle) * dist, feed=100)
+                self.work_offset_move(x = math.cos(angle) * dist, y = math.sin(angle) * dist, feed=180)
                 # Move below touch plate
                 self.work_offset_move(z = plateHeight-0.1, feed=100)
                 # Probe to the touch plate
@@ -959,10 +959,10 @@ class GCodeSender:
 
             # Move away from plate and up, then to center of touchplate
             self.work_offset_move(x = math.cos(angle) * secSafeDist, y = math.sin(angle) * secSafeDist, feed = 100)
-            self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+            self.work_offset_move(z = plateHeight + 0.5, feed=180) # Move just above reference plate, clearing lip on reference plate
         
         # we want work coord system to be center of knotch of touch plate, not center of touch plate itself.  Move there then make that zero.
-        self.work_offset_move(x = math.cos(angle - math.pi/4.0) * self.distToKnotch, y = math.sin(angle - math.pi/4.0) * self.distToKnotch)
+        self.work_offset_move(x = math.cos(angle - math.pi/4.0) * self.distToKnotch, y = math.sin(angle - math.pi/4.0) * self.distToKnotch, feed = 400)
         self.set_work_coord_offset(x = 0, y = 0)
         return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius), \
                 refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius)]
@@ -978,7 +978,7 @@ class GCodeSender:
 
         angle = estPlateAngle 
         # Move up
-        self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+        self.work_offset_move(z = plateHeight + 0.5, feed=180) # Move just above reference plate, clearing lip on reference plate
         # Move to side of touch plate and down a quarter of the plate width
 
         # this routine does not adjust work offset, so need to always be conservative
@@ -987,9 +987,9 @@ class GCodeSender:
         distAdjust = 0
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
             self.work_offset_move(x = math.cos(angle) * (dist - distAdjust) + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
-                                  y = math.sin(angle) * (dist - distAdjust) + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=100)
+                                  y = math.sin(angle) * (dist - distAdjust) + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=400)
             # Move below touch plate
-            self.work_offset_move(z = plateHeight-0.1, feed=100)
+            self.work_offset_move(z = plateHeight-0.1, feed=180)
             # Probe to the touch plate
             ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=feed)
@@ -1003,7 +1003,7 @@ class GCodeSender:
         difAdjust = 0
         for feed, dist in zip([5.9, 1.5], [firstSafeDist, firstSafeDist]):
             self.work_offset_move(x = math.cos(angle) * (dist - distAdjust) + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
-                                  y = math.sin(angle) * (dist - distAdjust) + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=100)
+                                  y = math.sin(angle) * (dist - distAdjust) + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=400)
             # Move below touch plate
             self.work_offset_move(z = plateHeight - 0.1, feed=100)
             # Probe to the touch plate
@@ -1013,8 +1013,8 @@ class GCodeSender:
         
         # Move away from reference plate and up
         self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
-                              y = math.sin(angle) * firstSafeDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=100)
-        self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
+                              y = math.sin(angle) * firstSafeDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=400)
+        self.work_offset_move(z = plateHeight + 0.5, feed=180) # Move just above reference plate, clearing lip on reference plate
 
         yAxisAngle = math.atan2(ref2[1] - ref1[1], ref2[0] - ref1[0])
         xAxisAngle = yAxisAngle - math.pi / 2.0 % (2 * math.pi)
@@ -1043,8 +1043,8 @@ class GCodeSender:
 
         self.flushGcodeRespQue()
         self.set_inches()
-        self.absolute_move(None, None, -0.25, feed = 50) # Move close to Z limit
-        self.absolute_move(avgX, avgY, None,  feed = 50) # Move above estimated ref plate
+        self.absolute_move(None, None, -0.25, feed = 180) # Move close to Z limit
+        self.absolute_move(avgX, avgY, None,  feed = 200) # Move above estimated ref plate
 
         print("avgXY: " + str(avgX) + " " + str(avgY))
         #first test out zero angle, then test out actual angle
@@ -1122,7 +1122,8 @@ class GCodeSender:
                                            depthPerPass       = 0.157,
                                            cutFeedRate        = 100,
                                            safeHeight         = 1.0,
-                                           tabHeight          = 0.12
+                                           tabHeight          = 0.12,
+                                           useMM              = False # use inches
                                           )
       cncGcodeGenerator.Generate()
       self.set_inches()
