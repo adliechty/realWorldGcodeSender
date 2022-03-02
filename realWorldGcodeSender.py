@@ -59,7 +59,7 @@ leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2)
 rightBoxFarHeight = 2.38
 leftBoxFarHeight  = 3.1375
 
-#There are 20 boxes, slop is divided by 20
+#There are 20 boxes, slope is divided by 20
 rightSlope = (rightBoxFarHeight - (rightBoxRef.Z - bedSize.Z)) / 20.0
 leftSlope = (leftBoxFarHeight - (leftBoxRef.Z - bedSize.Z)) / 20.0
 
@@ -615,7 +615,10 @@ class OverlayGcode:
             self.drawnPoints = []
             self.updateOverlay()
         elif event.key == 'C':
-            self.sender.send_drawnPoints(self.drawnPoints)
+            # offset G codes by workspace zero as G codes send relative to workspace offset
+            offset = Point3D(-self.refPlateMeasuredLoc[0], \
+                             -self.refPlateMeasuredLoc[0])
+            self.sender.send_drawnPoints(offset, self.drawnPoints)
         elif event.key == 'shift':
             self.shiftHeld = True
             print("shift")
@@ -925,7 +928,7 @@ class GCodeSender:
         self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
         self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         # return z height of the probe
-        return xyz[2] - plateHeight
+        return xyz[0], xyz[1], xyz[2] - plateHeight
 
 
     def probeXYSequence(self, plateAngle):
@@ -965,7 +968,7 @@ class GCodeSender:
                 refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius)]
 
 
-    def probeAngleOfTouchPlate(self, estPlateAngle):
+    def probeAngleOfTouchPlate(self, estPlateAngle, x, y):
         plateHeight = self.plateHeight
         plateWidth = self.plateWidth # total width of touch plate...half of this is distance to center of touch plate
         firstSafeDist = plateWidth * 0.75
@@ -977,7 +980,7 @@ class GCodeSender:
         # Move up
         self.work_offset_move(z = plateHeight + 0.5, feed=100) # Move just above reference plate, clearing lip on reference plate
         # Move to side of touch plate and down a quarter of the plate width
-        
+
         # this routine does not adjust work offset, so need to always be conservative
         #Probe down a quarter of touch plate first
         #once medium speed, once slow speed
@@ -991,7 +994,9 @@ class GCodeSender:
             ref1 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle - math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle - math.pi/2.0) * plateWidth * 0.25, feed=feed)
             # move just 0.1" away from plate next probe since we know where idge roughy is now
-            #distAdjust = math.dist([0,0], [ref1[0], ref1[1]]) - 0.1
+            distAdjust = dist - math.dist([x,y], [ref1[0], ref1[1]]) - 0.05
+            print(ref1)
+            print("distAdjust: " + str(distAdjust))
 
         #Probe up a quarter of touch plate second
         #once medium speed, once slow speed
@@ -1004,7 +1009,7 @@ class GCodeSender:
             # Probe to the touch plate
             ref2 = self.probe(x = math.cos(angle) * probeToDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
                               y = math.sin(angle) * probeToDist + math.sin(angle + math.pi/2.0) * plateWidth * 0.25, feed=feed)
-            #distAdjust = math.dist([0,0], [ref2[0], ref2[1]]) - 0.1
+            distAdjust = dist - math.dist([x,y], [ref2[0], ref2[1]]) - 0.05
         
         # Move away from reference plate and up
         self.work_offset_move(x = math.cos(angle) * firstSafeDist + math.cos(angle + math.pi/2.0) * plateWidth * 0.25 , \
@@ -1024,8 +1029,8 @@ class GCodeSender:
         # First Zero out work coord offset with best we have thus far
         self.set_work_coord_offset(x=0, y=0, z = 0) # probe ony works on work coordinage system, set it to 0 so we know where we are in that
         # first get Z height right
-        z = self.probeZSequence()
-        plateAngle = self.probeAngleOfTouchPlate(estPlateAngle)
+        x, y, z = self.probeZSequence()
+        plateAngle = self.probeAngleOfTouchPlate(estPlateAngle, x, y)
         xy =  self.probeXYSequence(plateAngle)
         print("xy: " + str(xy))
         return xy + [z]
@@ -1044,6 +1049,7 @@ class GCodeSender:
         print("avgXY: " + str(avgX) + " " + str(avgY))
         #first test out zero angle, then test out actual angle
         #return self.probeSequence(0)
+
         return self.probeSequence(angle)
 
     def waitOnGCodeComplete(self, gCode):
@@ -1099,15 +1105,19 @@ class GCodeSender:
         fStr = " F" + str(feed)
         self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
 
-    def send_drawnPoints(self, points3D):
-      cncPaths = cncPathsClass(points3D        = points3D,
+    def send_drawnPoints(self, offset, points3D):
+      points = deepcopy(points3D)
+      for point in points:
+          point.X = point.X + offset.X
+          point.Y = point.Y + offset.Y
+      cncPaths = cncPathsClass(points3D        = points,
                                pointsPerCurve  = 30,
                                distPerTab      = 8,
                                tabWidth        = 0.25,
                                cutterDiameter  = 0.25
                         )
       cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
-                                           materialThickness  = 0.75,
+                                           materialThickness  = 0.2,
                                            depthBelowMaterial = 0.1,
                                            depthPerPass       = 0.157,
                                            cutFeedRate        = 100,
@@ -1117,8 +1127,10 @@ class GCodeSender:
       cncGcodeGenerator.Generate()
       self.set_inches()
       self.absolute_move(z = -0.25)
+      print("SENDING GCODE")
       for gCode in cncGcodeGenerator.gCodes:
-          self.gerbil.stream(gCode + "\n")
+          print("CODE: " + str(gCode))
+          self.gerbil.stream(str(gCode) + "\n")
 
       self.absolute_move(z = -0.25)
 
@@ -1258,7 +1270,7 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, origPixelToBedPixelLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = False)
+GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
 
 ########################################
 # Detect box location in overhead image
