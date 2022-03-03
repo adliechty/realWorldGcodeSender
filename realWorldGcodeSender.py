@@ -42,6 +42,9 @@ global bedSize
 global bedViewSizePixels
 global rightSlope
 global leftSlope
+global materialThickness
+
+materialThickness = 0.75
 
 
 #right side, 2.3975" from bed, 2.38" near wall.  0.326 from end of bed
@@ -51,13 +54,13 @@ global leftSlope
 boxWidth = 0.745642857
 bedSize = Point3D(-35.0, -35.0, -3.75)
 #These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3975)
-leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2)
+rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3975 - materialThickness)
+leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2 - materialThickness)
 
 #This is the height of the bottom box from the bed at the far end (near Y 0)
 #as the reference squares may not be perfectly level to the bed 
-rightBoxFarHeight = 2.38
-leftBoxFarHeight  = 3.1375
+rightBoxFarHeight = 2.38 - materialThickness
+leftBoxFarHeight  = 3.1375 - materialThickness
 
 #There are 20 boxes, slope is divided by 20
 rightSlope = (rightBoxFarHeight - (rightBoxRef.Z - bedSize.Z)) / 20.0
@@ -1106,6 +1109,7 @@ class GCodeSender:
         self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
 
     def send_drawnPoints(self, offset, points3D):
+      global materialThickness
       points = deepcopy(points3D)
       for point in points:
           point.X = point.X + offset.X
@@ -1117,7 +1121,7 @@ class GCodeSender:
                                cutterDiameter  = 0.25
                         )
       cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
-                                           materialThickness  = 0.2,
+                                           materialThickness  = materialThickness,
                                            depthBelowMaterial = 0.1,
                                            depthPerPass       = 0.157,
                                            cutFeedRate        = 100,
@@ -1194,7 +1198,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-file = 'cnc9.jpg'
+file = 'cnc8.jpg'
 frame = cv2.imread(file)
 img = cv2.imread(file)
 
