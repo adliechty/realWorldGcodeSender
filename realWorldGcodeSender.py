@@ -308,6 +308,7 @@ class OverlayGcode:
         plt.subplots_adjust(bottom=0.01, right = 0.99)
         plt.axis([self.bedViewSizePixels,0, self.bedViewSizePixels, 0])
         plt.rcParams['keymap.back'].remove('c') # we use c for circle
+        plt.rcParams['keymap.back'].remove('s') # we use s for send
         #Generate matplotlib plot from opencv image
         self.matPlotImage = plt.imshow(self.cv2Overhead)
         ###############################################
@@ -693,9 +694,9 @@ def getBoxAngle(points):
             break
     print(angle * 180 / math.pi)
     # a square is square, so we will pick one of the 4 angles 0, + 90, +180, or +270
-    if angle < 0:
+    if angle < math.pi / 4:
         angle = angle + math.pi
-    if angle >= math.pi / 2:
+    if angle >= math.pi / 4:
         angle = angle - math.pi / 2
     return angle
 
@@ -967,8 +968,8 @@ class GCodeSender:
         # we want work coord system to be center of knotch of touch plate, not center of touch plate itself.  Move there then make that zero.
         self.work_offset_move(x = math.cos(angle - math.pi/4.0) * self.distToKnotch, y = math.sin(angle - math.pi/4.0) * self.distToKnotch, feed = 400)
         self.set_work_coord_offset(x = 0, y = 0)
-        return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius), \
-                refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius)]
+        return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius) + math.cos(angle - math.pi/4.0) * self.distToKnotch, \
+                refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius) + math.sin(angle - math.pi/4.0) * self.distToKnotch]
 
 
     def probeAngleOfTouchPlate(self, estPlateAngle, x, y):
@@ -1047,7 +1048,8 @@ class GCodeSender:
         self.flushGcodeRespQue()
         self.set_inches()
         self.absolute_move(None, None, -0.25, feed = 180) # Move close to Z limit
-        self.absolute_move(avgX, avgY, None,  feed = 200) # Move above estimated ref plate
+        # move 1.75" away from charuco marker bottom left
+        self.absolute_move(avgX + 1.335*math.cos(math.pi*5/4), avgY + 1.335*math.sin(math.pi*5/4), None,  feed = 200) # Move above estimated ref plate
 
         print("avgXY: " + str(avgX) + " " + str(avgY))
         #first test out zero angle, then test out actual angle
@@ -1198,7 +1200,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-file = 'cnc8.jpg'
+file = 'cnc12.jpg'
 frame = cv2.imread(file)
 img = cv2.imread(file)
 
