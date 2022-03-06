@@ -3,7 +3,7 @@ This program provides a cut preview of your GCODE, where it will cut, by simply 
 I spend so much time trying to line up the machine with my work piece, making sure it won't intersect my clamps.
 Sometimes I hit my clamps, sometimes my bit goes off the workpiece or hits a soft limit, stopping my cut process.
 
-![Cut Path](cutPath.png)
+![Cut Path](cutPath.PNG)
 
 # Caviots
 
@@ -36,4 +36,4 @@ I put those markers on the vertical rails on the left and right side of the CNC 
 I use homography (built into openCV) to then project down to the CNC bed or top of my workpiece, getting those pixel locations on the left and right side of the CNC bed.
 With the pixel locations on the left and right side of CNC bed, their physical locations of those, we can determine the phyiscal location of any pixel on the image,
 and thus we can then overlay a GCODE path and where it will cut in the real world onto the image, getting a cut preview.
-![How It Works](howItWorks.png)
+![How It Works](howItWorks.PNG)
