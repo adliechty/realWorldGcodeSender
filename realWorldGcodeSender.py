@@ -43,8 +43,10 @@ global bedViewSizePixels
 global rightSlope
 global leftSlope
 global materialThickness
+global cutterDiameter
 
 materialThickness = 0.75
+cutterDiameter    = 0.125
 
 
 #right side, 2.3975" from bed, 2.38" near wall.  0.326 from end of bed
@@ -281,7 +283,7 @@ def rotate(origin, point, angle):
 # OverlayGcode class
 ####################################################################################
 class OverlayGcode:
-    def __init__(self, cv2Overhead, gCodeFile, enableSender = True):
+    def __init__(self, cv2Overhead, gCodeFile = None, svgFile = None, enableSender = True):
         global bedViewSizePixels
         global bedSize
         
@@ -308,7 +310,8 @@ class OverlayGcode:
         plt.subplots_adjust(bottom=0.01, right = 0.99)
         plt.axis([self.bedViewSizePixels,0, self.bedViewSizePixels, 0])
         plt.rcParams['keymap.back'].remove('c') # we use c for circle
-        plt.rcParams['keymap.back'].remove('s') # we use s for send
+        plt.rcParams['keymap.save'].remove('s') # we use s for send
+        plt.rcParams['keymap.pan'].remove('p') # we use s for send
         #Generate matplotlib plot from opencv image
         self.matPlotImage = plt.imshow(self.cv2Overhead)
         ###############################################
@@ -344,83 +347,103 @@ class OverlayGcode:
         cid = fig.canvas.mpl_connect('key_press_event', self.onkeypress)
 
         #Create object to handle controlling the CNC machine and sending the g codes to it
+        self.gCodeFile = gCodeFile
         if enableSender:
-            self.sender = GCodeSender(gCodeFile)
+            self.sender = GCodeSender()
         
 
         self.points = []
         self.drawnPoints = []
         self.laserPowers = []
         self.machine = Machine()
-        
-        with open(gCodeFile, 'r') as fh:
-          for line_text in fh.readlines():
-            line = pygcode.Line(line_text)
-            prevPos = self.machine.pos
-            self.machine.process_block(line.block)
+
+
+        ############################################################################
+        # If generating cut paths from an SVG File
+        ############################################################################
+        self.svgFile = svgFile
+        if svgFile != None:
+            #Generate cncPaths object based on svgFile
+            #These are in mm
+            self.cncPaths = cncPathsClass(inputSvgFile   = svgFile,
+                                          pointsPerCurve = 30,
+                                          distPerTab      = 7.87,
+                                          tabWidth        = 0.25,
+                                          cutterDiameter  = cutterDiameter,
+                                          convertSvfToIn  = True
+                                         )
+
+            #Order cuts from inside holes to outside borders
+            self.cncPaths.orderCncHolePathsFirst()
+            self.cncPaths.orderPartialCutsFirst()
+
+            self.pathIndex = -1
+            self.pathOffsets = []
+            for path in self.cncPaths.cncPaths:
+                self.pathOffsets.append([0.0, 0.0])
+                
+
+        elif gCodeFile != None:
+            with open(gCodeFile, 'r') as fh:
+              for line_text in fh.readlines():
+                line = pygcode.Line(line_text)
+                prevPos = self.machine.pos
+                self.machine.process_block(line.block)
+                
+                ######################################
+                # First determine machine motion mode and power
+                ######################################
+                motion = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['motion']])
+                sCode = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['spindle_speed']])
+                power = sCode.split('S')[1]
+                #Make rapid movements 0 laser power
+                if motion == "G00" or motion == "G0":
+                  self.laserPowers.append(0.0)
+                else:
+                  self.laserPowers.append(float(power) / 100.0)
+
+                ######################################
+                # Determine machine current unit, convert to inches
+                ######################################
+                unit = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['units']])
+                x = None
+                if unit == "G20":
+                  if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
+                    beforeComment = line_text.split("(")[0]
+                    resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    if resultX != None:
+                        x = float(resultX.group()[1:])
+                        y = float(resultY.group()[1:])
+                        i = float(resultI.group()[1:])
+                        j = float(resultJ.group()[1:])
+                        clockWise = "G02" in motion or "G2" in motion
+                  else:
+                    self.points.append(Point3D(self.machine.pos.X, self.machine.pos.Y, self.machine.pos.Z))
+                else:
+                  if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
+                    resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', beforeComment)
+                    if resultX != None:
+                        x = float(resultX.group()[1:]) / 25.4
+                        y = float(resultY.group()[1:]) / 25.4
+                        i = float(resultI.group()[1:]) / 25.4
+                        j = float(resultJ.group()[1:]) / 25.4
+                        clockWise = "G02" in motion or "G2" in motion
+                  else:
+                    self.points.append(Point3D(self.machine.pos.X / 25.4, self.machine.pos.Y / 25.4, self.machine.pos.Z / 25.4))
+                if x != None:
+                  self.points.extend(arcToPoints(prevPos.X, prevPos.Y, self.machine.pos.X, self.machine.pos.Y, i, j, clockWise, self.machine.pos.Z))
+                  self.laserPowers.extend([self.laserPowers[-1]] * (len(self.points) - len(self.laserPowers)))
+        else:
+            print("Must use either svg or gCode file")
+            quit()
+
             
-            ######################################
-            # First determine machine motion mode and power
-            ######################################
-            motion = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['motion']])
-            sCode = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['spindle_speed']])
-            power = sCode.split('S')[1]
-            #Make rapid movements 0 laser power
-            if motion == "G00" or motion == "G0":
-              self.laserPowers.append(0.0)
-            else:
-              self.laserPowers.append(float(power) / 100.0)
-
-            ######################################
-            # Determine machine current unit, convert to inches
-            ######################################
-            unit = str(self.machine.mode.modal_groups[MODAL_GROUP_MAP['units']])
-            x = None
-            if unit == "G20":
-              if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
-                beforeComment = line_text.split("(")[0]
-                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                if resultX != None:
-                    x = float(resultX.group()[1:])
-                    y = float(resultY.group()[1:])
-                    i = float(resultI.group()[1:])
-                    j = float(resultJ.group()[1:])
-                    clockWise = "G02" in motion or "G2" in motion
-              else:
-                self.points.append(Point3D(self.machine.pos.X, self.machine.pos.Y, self.machine.pos.Z))
-            else:
-              if motion == "G02" or motion == "G2" or motion == "G03" or motion == "G3":
-                resultX = re.search('X[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                resultY = re.search('Y[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                resultI = re.search('I[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                resultJ = re.search('J[+-]?([0-9]*[.])?[0-9]+', beforeComment)
-                if resultX != None:
-                    x = float(resultX.group()[1:]) / 25.4
-                    y = float(resultY.group()[1:]) / 25.4
-                    i = float(resultI.group()[1:]) / 25.4
-                    j = float(resultJ.group()[1:]) / 25.4
-                    clockWise = "G02" in motion or "G2" in motion
-              else:
-                self.points.append(Point3D(self.machine.pos.X / 25.4, self.machine.pos.Y / 25.4, self.machine.pos.Z / 25.4))
-            if x != None:
-              self.points.extend(arcToPoints(prevPos.X, prevPos.Y, self.machine.pos.X, self.machine.pos.Y, i, j, clockWise, self.machine.pos.Z))
-              self.laserPowers.extend([self.laserPowers[-1]] * (len(self.points) - len(self.laserPowers)))
-
-            
-        #scale mm to inches
-        #self.scalePoints(self.points, 1 / 25.4, 1 / 25.4)
-        #self.paths, attributes, svg_attributes = svg2paths2("C:\\Git\\svgToGCode\\project_StorageBox\\0p5in_BoxBacks_x4_35by32.svg")
-        #Generate a list of all points up front, non transformed
-        #self.points = []
-        #for path in self.paths:
-        #  newPoints = pathToPoints3D(path, 10)
-        #  self.points.extend(newPoints)
-
-        #scale mm to inches
-        #self.scalePoints(self.points, 1 / 25.4, 1 / 25.4)
         self.updateOverlay()
 
     def set_ref_loc(self, refPixels):
@@ -464,24 +487,45 @@ class OverlayGcode:
       for point in points:
         point.X, point.Y = rotate(origin, [point.X, point.Y], angle)
 
-    def overlaySvg(self, image, xOff = 0, yOff = 0, rotation = 0):
+    def overlaySvgOrGcode(self, image, xOff = 0, yOff = 0, rotation = 0):
       """
       image is opencv image
       xOff is in inches
       yOff is in inches
       rotation is in degrees
       """
-      toolWidth = round(abs(0.25 * self.bedViewSizePixels / (leftBoxRef.X - rightBoxRef.X)))
+      global cutterDiameter
+      toolWidth = round(abs(cutterDiameter * self.bedViewSizePixels / (leftBoxRef.X - rightBoxRef.X)))
       #convert to radians
       rotation = rotation * math.pi / 180
       overlay = image.copy()
 
-      #Make copy of points before transforming them
-      transformedPoints = deepcopy(self.points)
-      #Apply an offset in inches
-      self.offsetPoints(transformedPoints, xOff, yOff)
-      #Then rotate
-      self.rotatePoints(transformedPoints, [xOff, yOff], rotation)
+      if self.gCodeFile != None:
+          #Make copy of points before transforming them
+          transformedPoints = deepcopy(self.points)
+          self.offsetPoints(transformedPoints, xOff, yOff)
+          self.rotatePoints(transformedPoints, [xOff, yOff], rotation)
+      else:
+          transformedPoints = []
+          self.laserPowers = []
+          for cncPath, offset in zip(self.cncPaths.cncPaths, self.pathOffsets):
+              newPoints = deepcopy(cncPath.points3D)
+              minX = 1000000000
+              minY = 1000000000
+              for point in newPoints:
+                  minX = min(minX, point.X)
+                  minY = min(minY, point.Y)
+              print("Length of path: " + str(len(cncPath.points3D)))
+              print("minLoc: " + str(minX) + "," + str(minY))
+
+              self.offsetPoints(newPoints, offset[0] , offset[1])
+              transformedPoints.extend(newPoints)
+              if cncPath.color[1] == 0:
+                  self.laserPowers.extend([0] + [1] * (len(cncPath.points3D) - 1))
+              else:
+                  self.laserPowers.extend([cncPath.color[1] / 255] * len(cncPath.points3D))
+          self.rotatePoints(transformedPoints, [offset[0], offset[1]], rotation)
+
       #Then convert to pixel location
       self.phyPointsToPixels(transformedPoints)
       prevPoint = None
@@ -502,7 +546,7 @@ class OverlayGcode:
       return overlay
 
     def updateOverlay(self):
-        overlay = self.overlaySvg(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
+        overlay = self.overlaySvgOrGcode(self.cv2Overhead, self.xOffset, self.yOffset, self.rotation)
         self.matPlotImage.set_data(overlay)
         self.matPlotImage.figure.canvas.draw()
 
@@ -572,8 +616,25 @@ class OverlayGcode:
     def onkeypress(self, event):
         x, y = self._mouse_pos_inches()
         print(event.key)
-        if   event.key == 's':
-            self.sender.send_file(self.xOffset, self.yOffset, self.rotation)
+        # if sending a g code file
+        if   event.key == 'g':
+            self.sender.send_file(self.gCodeFile, self.xOffset, self.yOffset, self.rotation)
+        # if sending an svf file
+        elif event.key == 's':
+            # perform transfomrations that were done in GUI on actual points in the path
+            for path in self.cncPaths.cncPaths:
+              self.offsetPoints(newPoints, offset[0] , offset[1])
+            self.rotatePoints(transformedPoints, [offset[0], offset[1]], rotation)
+
+            # Before sending add tabs
+            self.cncPaths.addTabs()
+            self.cncPaths.ModifyPointsFromTabLocations()
+                
+            self.sender.send_svf(self.cncPaths)
+        elif event.key == 'n':
+            self.pathIndex = self.pathIndex + 1
+        elif event.key == 'p':
+            self.pathIndex = self.pathIndex - 1
 
         elif event.key == 'h':
             self.sender.home_machine()
@@ -581,7 +642,9 @@ class OverlayGcode:
         elif event.key == 'z':
             #Find X, Y, and Z position of the aluminum reference block on the work piece
             #sepcify the X and Y estimated position of the reference block
-            self.refPlateMeasuredLoc = self.sender.zero_on_refPlate(self.refPoints)
+            #self.refPlateMeasuredLoc = self.sender.zero_on_refPlate(self.refPoints)
+            #Just probe z height for now for demo
+            self.sender.zero_on_refPlate(self.refPoints, True)
             print("refPlateMeasuredLoc: " + str(self.refPlateMeasuredLoc))
             print("camRefCenter: " + str(self.camRefCenter))
 
@@ -654,6 +717,7 @@ class OverlayGcode:
           #xIn = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
           #yIn = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
           self.rotation = math.atan2(yIn - self.yOffset, xIn - self.xOffset)
+          self.rotation = self.rotation - math.pi/2.0
           self.rotation = self.rotation * 180 / math.pi
 
       else:
@@ -664,6 +728,25 @@ class OverlayGcode:
                 str(pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y))
           #self.xOffset = pixelsToOrigin[0] / self.bedViewSizePixels * self.bedSize.X
           #self.yOffset = pixelsToOrigin[1] / self.bedViewSizePixels * self.bedSize.Y
+          # if negative 1 then apply offset to all paths, else just selected path
+          if self.pathIndex == -1:
+              i = 0
+              for path in self.cncPaths.cncPaths:
+                  minX = 1000000000
+                  minY = 1000000000
+                  for point in path.points3D:
+                      minX = min(minX, point.X)
+                      minY = min(minY, point.Y)
+
+                  self.pathOffsets[i] = [xIn, yIn]
+                  i = i + 1
+          else:
+              minX = 1000000000
+              minY = 1000000000
+              for point in self.cncPaths.cncPaths[self.pathIndex].points3D:
+                  minX = min(minX, point.X)
+                  minY = min(minY, point.Y)
+              self.pathOffsets[self.pathIndex]  = [xIn - minX, yIn - minY]
       self.updateOverlay()
       self.xBox.set_val(str(self.xOffset))
       self.yBox.set_val(str(self.yOffset))
@@ -845,7 +928,7 @@ def display_4_lines(pixels, frame, flip=False):
   cv2.line(frame, line4,line1,(0,255,255),3)
 
 class GCodeSender:
-    def __init__(self, gCodeFile):
+    def __init__(self):
         self.event = threading.Event()
         self.dataList = []
         self.eventList = []
@@ -859,12 +942,12 @@ class GCodeSender:
 
         self.gerbil.cnect("COM4", 115200)
         self.gerbil.poll_start()
-        self.gCodeFile = gCodeFile
         self.set_inches()
 
         self.plateHeight = 0.472441 # 12mm
         self.plateWidth  = 2.75591 # 70mm
-        self.bitRadius   = 0.125
+        global cutterDiameter
+        self.cutterRadius   = cutterDiameter / 2.0
         self.distToKnotch = (0.984252**2 + 0.984252**2) ** 0.5 #25mm both directions to the knotch
 
 
@@ -902,7 +985,11 @@ class GCodeSender:
 
     def set_work_coord_offset(self, x = None, y = None, z = None):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
-        self.gerbil.send_immediately("G92 " + xStr + yStr + zStr + "\n") # G38.2 only works in work coordinate systeem, so set work coordinate to 0 so we know where we are in that
+        self.gerbil.send_immediately("G54 " + xStr + yStr + zStr + "\n")
+
+    def set_cur_pos_as(self, x = None, y = None, z = None):
+        xStr, yStr, zStr = self._get_xyz_string(x, y, z)
+        self.gerbil.send_immediately("G92 " + xStr + yStr + zStr + "\n")
 
     def probe(self, x = None, y = None, z = None, feed = 5.9):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
@@ -923,20 +1010,20 @@ class GCodeSender:
         print("***************************************5")
         self.probe(z = -2.75, feed = 5.9) # move down by 2.75" until probe hit
         print("***************************************6")
-        self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
+        self.set_cur_pos_as(z = plateHeight) # Set actual 0 to probed location
         print("***************************************7")
 
         #Move up, then slowly to reference plate
         self.work_offset_move(z = plateHeight + 0.1, feed=180) # Move just above reference plate
         xyz = self.probe(z = plateHeight-0.05, feed = 1.5)
-        self.set_work_coord_offset(z = plateHeight) # Set actual 0 to probed location
+        self.set_cur_pos_as(z = plateHeight) # Set actual 0 to probed location
         self.work_offset_move(z = plateHeight + 0.5, feed=180) # Move just above reference plate, clearing lip on reference plate
         # return z height of the probe
         return xyz[0], xyz[1], xyz[2] - plateHeight
 
 
     def probeXYSequence(self, plateAngle):
-        bitRadius = self.bitRadius
+        cutterRadius = self.cutterRadius
         # Firxt xAxis then yAxis
         for axisAngle in [0, math.pi / 2.0]:
             angle = axisAngle + plateAngle
@@ -944,7 +1031,7 @@ class GCodeSender:
             plateHeight = self.plateHeight
             plateWidth = self.plateWidth # total width of touch plate...half of this is distance to center of touch plate
             firstSafeDist = plateWidth * 0.75
-            secSafeDist = plateWidth * 0.5 + bitRadius + 0.1 # can get a little closer second time as we already sensed edge of plate once
+            secSafeDist = plateWidth * 0.5 + cutterRadius + 0.1 # can get a little closer second time as we already sensed edge of plate once
             probeToDist = plateWidth * 0.25
 
             # Move up
@@ -958,8 +1045,8 @@ class GCodeSender:
                 # Probe to the touch plate
                 refPoint = self.probe(x = math.cos(angle) * probeToDist, y = math.sin(angle) * probeToDist, feed=5.9)
                 # set this as new side of touch plate
-                self.set_work_coord_offset(x = math.cos(angle) * (plateWidth * 0.5 + bitRadius) , \
-                                           y = math.sin(angle) * (plateWidth * 0.5 + bitRadius))
+                self.set_cur_pos_as(x = math.cos(angle) * (plateWidth * 0.5 + cutterRadius) , \
+                                           y = math.sin(angle) * (plateWidth * 0.5 + cutterRadius))
 
             # Move away from plate and up, then to center of touchplate
             self.work_offset_move(x = math.cos(angle) * secSafeDist, y = math.sin(angle) * secSafeDist, feed = 100)
@@ -967,9 +1054,9 @@ class GCodeSender:
         
         # we want work coord system to be center of knotch of touch plate, not center of touch plate itself.  Move there then make that zero.
         self.work_offset_move(x = math.cos(angle - math.pi/4.0) * self.distToKnotch, y = math.sin(angle - math.pi/4.0) * self.distToKnotch, feed = 400)
-        self.set_work_coord_offset(x = 0, y = 0)
-        return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + bitRadius) + math.cos(angle - math.pi/4.0) * self.distToKnotch, \
-                refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + bitRadius) + math.sin(angle - math.pi/4.0) * self.distToKnotch]
+        self.set_cur_pos_as(x = 0, y = 0)
+        return [refPoint[0] - math.cos(angle) * (plateWidth * 0.5 + cutterRadius) + math.cos(angle - math.pi/4.0) * self.distToKnotch, \
+                refPoint[1] - math.sin(angle) * (plateWidth * 0.5 + cutterRadius) + math.sin(angle - math.pi/4.0) * self.distToKnotch]
 
 
     def probeAngleOfTouchPlate(self, estPlateAngle, x, y):
@@ -1026,20 +1113,24 @@ class GCodeSender:
         print("xAxisAngle: " + str(xAxisAngle))
         return xAxisAngle
 
-    def probeSequence(self, estPlateAngle):
+    def probeSequence(self, estPlateAngle, justZ):
         #function assumes spindle is directly above probe plate in estimated middle
         #function returns x, y, z position of center top of plate
 
         # First Zero out work coord offset with best we have thus far
-        self.set_work_coord_offset(x=0, y=0, z = 0) # probe ony works on work coordinage system, set it to 0 so we know where we are in that
+        self.set_cur_pos_as(x=0, y=0, z = 0) # probe ony works on work coordinage system, set it to 0 so we know where we are in that
         # first get Z height right
         x, y, z = self.probeZSequence()
+        if justZ:
+            self.set_work_coord_offset(Z = z)
+            return [x, y, z]
         plateAngle = self.probeAngleOfTouchPlate(estPlateAngle, x, y)
         xy =  self.probeXYSequence(plateAngle)
         print("xy: " + str(xy))
+        self.set_work_coord_offset(x, y, z)
         return xy + [z]
             
-    def zero_on_refPlate(self, refPoints):
+    def zero_on_refPlate(self, refPoints, justZ = False):
         avgX = (refPoints[0][0] + refPoints[1][0] + refPoints[2][0] + refPoints[3][0]) / 4.0
         avgY = (refPoints[0][1] + refPoints[1][1] + refPoints[2][1] + refPoints[3][1]) / 4.0
         angle = getBoxAngle(refPoints)
@@ -1055,7 +1146,7 @@ class GCodeSender:
         #first test out zero angle, then test out actual angle
         #return self.probeSequence(0)
 
-        return self.probeSequence(angle)
+        return self.probeSequence(angle, justZ)
 
     def waitOnGCodeComplete(self, gCode):
       resp = None
@@ -1112,6 +1203,7 @@ class GCodeSender:
 
     def send_drawnPoints(self, offset, points3D):
       global materialThickness
+      global cutterDiameter
       points = deepcopy(points3D)
       for point in points:
           point.X = point.X + offset.X
@@ -1120,7 +1212,7 @@ class GCodeSender:
                                pointsPerCurve  = 30,
                                distPerTab      = 8,
                                tabWidth        = 0.25,
-                               cutterDiameter  = 0.25
+                               cutterDiameter  = cutterDiameter
                         )
       cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
                                            materialThickness  = materialThickness,
@@ -1147,14 +1239,15 @@ class GCodeSender:
     def set_mm(self):
         self.gerbil.send_immediately("G21\n")
 
-    def send_file(self, xOffset, yOffset, rotation):
+    def send_file(self, gCodeFile, xOffset, yOffset, rotation):
         #Set to inches for offset and rotations
         self.set_inches()
 
         ##########################################
         #Offset work to desired offset
         ##########################################
-        self.gerbil.send_immediately("G54 X" + str(xOffset) + " Y" + str(yOffset) + "\n")
+        set_cur_pos_as
+        self.set_work_coord_offset(xOffset, yOffset)
 
         ##########################################
         #Rotate work to desired rotation
@@ -1166,7 +1259,7 @@ class GCodeSender:
         self.set_mm()
 
         ZFound = False
-        with open(self.gCodeFile, 'r') as fh:
+        with open(gCodeFile, 'r') as fh:
           for line_text in fh.readlines():
             if " Z" in line_text.upper():
               ZFound = True
@@ -1177,7 +1270,7 @@ class GCodeSender:
         if ZFound:
           self.absolute_move(z = -0.25)
 
-        with open(self.gCodeFile, 'r') as fh:
+        with open(gCodeFile, 'r') as fh:
             for line_text in fh.readlines():
                 self.gerbil.stream(line_text)
 
@@ -1200,7 +1293,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 800)
 
 # Capture frame-by-frame
 #ret, frame = cap.read()
-file = 'cnc12.jpg'
+file = 'cnc13.jpg'
 frame = cv2.imread(file)
 img = cv2.imread(file)
 
@@ -1277,7 +1370,10 @@ cv2.waitKey()
 gCodeFile = 'test.nc'
 cv2Overhead = cv2.warpPerspective(frame, origPixelToBedPixelLoc, (frame.shape[1], frame.shape[0]))
 cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
-GCodeOverlay = OverlayGcode(cv2Overhead, gCodeFile, enableSender = True)
+GCodeOverlay = OverlayGcode(cv2Overhead, \
+                            svgFile = 'puzzles2.svg', \
+                            #gCodeFile = gCodeFile, \
+                            enableSender = False)
 
 ########################################
 # Detect box location in overhead image
