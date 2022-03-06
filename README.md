@@ -9,6 +9,7 @@ Sometimes I hit my clamps, sometimes my bit goes off the workpiece or hits a sof
 
 This was thrown together quickly to show the concept.  Amazingly enough it seems to work.
 There are many future improvements that could be made with time.
+
 I have 2 children at the moment, so my time is limited, I would love to see someone pick up the concept, roll with it and put it into CNC software.
 
 # Current features (all not pollished out, but mached up):
