@@ -45,7 +45,7 @@ global leftSlope
 global materialThickness
 global cutterDiameter
 
-materialThickness = 0.75
+materialThickness = 0.471
 cutterDiameter    = 0.125
 
 
@@ -510,13 +510,6 @@ class OverlayGcode:
           self.laserPowers = []
           for cncPath, offset in zip(self.cncPaths.cncPaths, self.pathOffsets):
               newPoints = deepcopy(cncPath.points3D)
-              minX = 1000000000
-              minY = 1000000000
-              for point in newPoints:
-                  minX = min(minX, point.X)
-                  minY = min(minY, point.Y)
-              print("Length of path: " + str(len(cncPath.points3D)))
-              print("minLoc: " + str(minX) + "," + str(minY))
 
               self.offsetPoints(newPoints, offset[0] , offset[1])
               transformedPoints.extend(newPoints)
@@ -622,13 +615,16 @@ class OverlayGcode:
         # if sending an svf file
         elif event.key == 's':
             # perform transfomrations that were done in GUI on actual points in the path
-            for path in self.cncPaths.cncPaths:
-              self.offsetPoints(newPoints, offset[0] , offset[1])
-            self.rotatePoints(transformedPoints, [offset[0], offset[1]], rotation)
+            rotation = self.rotation * math.pi / 180
+            for path, offset in zip(self.cncPaths.cncPaths, self.pathOffsets):
+              print("before: " + str(path.points3D[0]) + " offset: " + str(offset))
+              self.offsetPoints(path.points3D, offset[0] , offset[1])
+              self.rotatePoints(path.points3D, [self.pathOffsets[-1][0], self.pathOffsets[-1][1]], rotation)
+              print("after: " + str(path.points3D[0]))
 
             # Before sending add tabs
-            self.cncPaths.addTabs()
-            self.cncPaths.ModifyPointsFromTabLocations()
+            #self.cncPaths.addTabs()
+            #self.cncPaths.ModifyPointsFromTabLocations()
                 
             self.sender.send_svf(self.cncPaths)
         elif event.key == 'n':
@@ -955,11 +951,17 @@ class GCodeSender:
 
     def gerbil_callback(self, eventstring, *data):
         args = []
+        #if eventstring != 'on_vars_change' and \
+        #   eventstring != 'on_progress_percent' and \
+        #   eventstring != 'on_log' and \
+        #   eventstring != 'on_write' and \
+        #   eventstring != 'on_line_sent' and \
+        #   eventstring != 'on_bufsize_change':
+        #   print("GERBIL CALLBACK: " + eventstring)
         if eventstring != "on_read":
             return
         print()
         print()
-        print("GERBIL CALLBACK: " + eventstring)
         for d in data:
             args.append(str(d))
             print(d)
@@ -986,6 +988,7 @@ class GCodeSender:
     def set_work_coord_offset(self, x = None, y = None, z = None):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
         self.gerbil.send_immediately("G54 " + xStr + yStr + zStr + "\n")
+        self.gerbil.send_immediately("G54\n")
 
     def set_cur_pos_as(self, x = None, y = None, z = None):
         xStr, yStr, zStr = self._get_xyz_string(x, y, z)
@@ -1122,7 +1125,10 @@ class GCodeSender:
         # first get Z height right
         x, y, z = self.probeZSequence()
         if justZ:
-            self.set_work_coord_offset(Z = z)
+            #reset G92 coordinate system to normal,
+            #where current position is actual position is position in work coordinate system
+            self.set_cur_pos_as(x = x, y = y, z = self.plateHeight + 0.5)
+            self.set_work_coord_offset(x = 0.0, y = 0.0, Z = z - self.plateHeight)
             return [x, y, z]
         plateAngle = self.probeAngleOfTouchPlate(estPlateAngle, x, y)
         xy =  self.probeXYSequence(plateAngle)
@@ -1201,6 +1207,40 @@ class GCodeSender:
         fStr = " F" + str(feed)
         self.gerbil.send_immediately("G1" + xStr + yStr + zStr + fStr + "\n")
 
+    def send_svf(self, cncPaths):
+      global materialThickness
+      global cutterDiameter
+
+      cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
+                                           materialThickness  = materialThickness,
+                                           depthBelowMaterial = 0.1,
+                                           depthPerPass       = 0.157,
+                                           cutFeedRate        = 100,
+                                           safeHeight         = 0.25,
+                                           tabHeight          = 0.12,
+                                           useMM              = False # use inches
+                                          )
+      cncGcodeGenerator.Generate()
+      cncGcodeGenerator.Save("test.nc")
+      #asdfasdf
+      self.set_inches()
+      self.absolute_move(z = -0.5)
+      print("SENDING GCODE")
+      gCodeStrs = []
+      for code in cncGcodeGenerator.gCodes:
+          gCodeStrs.append(str(code))
+      # put whole file in buffer then run the job
+      self.gerbil.write(gCodeStrs)
+      self.gerbil.job_run()
+      #for gCode in cncGcodeGenerator.gCodes:
+      #    code = str(gCode) + "\n"
+      #    #print("CODE:" + code)
+      #    self.gerbil.stream(code)
+      #    #self.gerbil.send_immediately(code)
+      #    time.sleep(0.01)
+
+      self.absolute_move(z = -0.25)
+
     def send_drawnPoints(self, offset, points3D):
       global materialThickness
       global cutterDiameter
@@ -1246,7 +1286,6 @@ class GCodeSender:
         ##########################################
         #Offset work to desired offset
         ##########################################
-        set_cur_pos_as
         self.set_work_coord_offset(xOffset, yOffset)
 
         ##########################################
