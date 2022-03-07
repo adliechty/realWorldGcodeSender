@@ -29,6 +29,9 @@ I have 2 children at the moment, so my time is limited, I would love to see some
 * Make it so webcam is a live view of CNC bed rather than one time picture
 * Refactor code and make cleaner.  I threw this together in spare time I had
 * Allow 3d rotating view to see Z height, and prevent things like first move being rapid traverse into your work piece
+* Camera calibration
+* Further evaluate accuracy, may need to put charuco markers directly on workpiece instead, or put charuco markers all along left and right side of Y axis beam.
+* Build in calibration of exact location of charuco markers
 
 
 # How it works

@@ -53,11 +53,11 @@ cutterDiameter    = 0.125
 #left side 3.2" from bed.  3.1375 near wall.  0.3145" from end of bed
 #5.2195" / 7 = 0.745643" per box
 
-boxWidth = 0.745642857
+boxWidth = 0.745642857 * 1.01
 bedSize = Point3D(-35.0, -35.0, -3.75)
 #These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(4.0, -34.0, bedSize.Z + 2.3975 - materialThickness)
-leftBoxRef = Point3D(-39.0, -34.0, bedSize.Z + 3.2 - materialThickness)
+rightBoxRef = Point3D(4.0-.09, -34.0-0.1, bedSize.Z + 2.3975 - materialThickness)
+leftBoxRef = Point3D(-39.0-.09, -34.0-0.1, bedSize.Z + 3.2 - materialThickness)
 
 #This is the height of the bottom box from the bed at the far end (near Y 0)
 #as the reference squares may not be perfectly level to the bed 
@@ -649,7 +649,7 @@ class OverlayGcode:
             print("camRefCenter: " + str(self.camRefCenter))
 
         elif event.key == 'm':
-            self.sender.absolute_move(x, y)
+            self.sender.absolute_move(x, y, feed = 300)
 
         elif event.key == 'd':
             # first d turns on preview
@@ -1373,7 +1373,7 @@ cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
 GCodeOverlay = OverlayGcode(cv2Overhead, \
                             svgFile = 'puzzles2.svg', \
                             #gCodeFile = gCodeFile, \
-                            enableSender = False)
+                            enableSender = True)
 
 ########################################
 # Detect box location in overhead image
