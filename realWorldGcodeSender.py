@@ -56,8 +56,8 @@ cutterDiameter    = 0.125
 boxWidth = 0.745642857 * 1.01
 bedSize = Point3D(-35.0, -35.0, -3.75)
 #These are distances from machine origin (0,0,0), right, back, upper corner.
-rightBoxRef = Point3D(4.0-.09, -34.0-0.1, bedSize.Z + 2.3975 - materialThickness)
-leftBoxRef = Point3D(-39.0-.09, -34.0-0.1, bedSize.Z + 3.2 - materialThickness)
+rightBoxRef = Point3D(4.0-.17, -34.0-0.2, bedSize.Z + 2.3975 - materialThickness)
+leftBoxRef = Point3D(-39.0-.17, -34.0-0.2, bedSize.Z + 3.2 - materialThickness)
 
 #This is the height of the bottom box from the bed at the far end (near Y 0)
 #as the reference squares may not be perfectly level to the bed 
@@ -1140,7 +1140,7 @@ class GCodeSender:
         self.set_inches()
         self.absolute_move(None, None, -0.25, feed = 180) # Move close to Z limit
         # move 1.75" away from charuco marker bottom left
-        self.absolute_move(avgX + 1.335*math.cos(math.pi*5/4), avgY + 1.335*math.sin(math.pi*5/4), None,  feed = 200) # Move above estimated ref plate
+        self.absolute_move(avgX + 1.335*math.cos(math.pi*5/4), avgY + 1.335*math.sin(math.pi*5/4), None,  feed = 300) # Move above estimated ref plate
 
         print("avgXY: " + str(avgX) + " " + str(avgY))
         #first test out zero angle, then test out actual angle
