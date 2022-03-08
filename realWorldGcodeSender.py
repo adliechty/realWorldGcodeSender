@@ -1412,7 +1412,7 @@ cv2Overhead = cv2.resize(cv2Overhead, (bedViewSizePixels, bedViewSizePixels))
 GCodeOverlay = OverlayGcode(cv2Overhead, \
                             svgFile = 'puzzles2.svg', \
                             #gCodeFile = gCodeFile, \
-                            enableSender = True)
+                            enableSender = False)
 
 ########################################
 # Detect box location in overhead image
