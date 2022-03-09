@@ -9,6 +9,7 @@ Sometimes I hit my clamps, sometimes my bit goes off the workpiece or hits a sof
 
 This was thrown together quickly to show the concept.  Amazingly enough it seems to work.
 There are many future improvements that could be made with time.
+Before using, I need to do some serious clean up, documentation, and making easier to use by others.
 
 I have 2 children at the moment, so my time is limited, I would love to see someone pick up the concept, roll with it and put it into CNC software.
 
@@ -21,10 +22,12 @@ I have 2 children at the moment, so my time is limited, I would love to see some
    * ALlows quick and easy cutting of SVGs from boxespy website
    * Auto adds tabs to SVG (rough, slow, needs work, but mostly works)
 * Auto finds probe plate, and probes, XYZ location of the probe plate
+* Can draw on top of image to do on the fly cutting
 
 # Desired future features (Possible, just needs work, some are easier than others):
 * Polish this out, put it into actual CNC software
 * Implmenet in different language other than python, as python is not as responsive for this application
+* Live update of where router is within the cut
 * Make UI much better, right not it is very rough
 * Make it so webcam is a live view of CNC bed rather than one time picture
 * Refactor code and make cleaner.  I threw this together in spare time I had
