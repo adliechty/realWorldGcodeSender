@@ -1,0 +1,14 @@
+Where is my CNC router going to cut?
+  Am I going to run into a clamp?
+  Am I cutting on my workpiece?
+  Will I hit a soft or hard limit?
+  Is my workpiece straight?
+  Can also use this to measure objects as it knows the physical location of
+each pixel in the view.
+  Can draw directly on top of image to do on the spot cutting
+  
+
+CNC routers may be harder to use than 3D printers, can a cut preview help?
+Printers have a print preview, should CNC routers have a cut preview?
+3d printers
+
