@@ -317,29 +317,29 @@ class OverlayGcode:
         ###############################################
         # Generate controls for plot
         ###############################################
-        xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
-        self.xBox = TextBox(xAxes, "xOffset (in)", initial="0")
-        label = self.xBox.ax.get_children()[1] # label is a child of the TextBox axis
-        label.set_position([0.5,1]) # [x,y] - change here to set the position
-        label.set_horizontalalignment('center')
-        label.set_verticalalignment('bottom')
-        self.xBox.on_submit(self.onUpdateXOffset)
+        #xAxes = plt.axes([0.01, 0.8, 0.2, 0.04])
+        #self.xBox = TextBox(xAxes, "xOffset (in)", initial="0")
+        #label = self.xBox.ax.get_children()[1] # label is a child of the TextBox axis
+        #label.set_position([0.5,1]) # [x,y] - change here to set the position
+        #label.set_horizontalalignment('center')
+        #label.set_verticalalignment('bottom')
+        #self.xBox.on_submit(self.onUpdateXOffset)
 
-        yAxes = plt.axes([0.01, 0.7, 0.2, 0.04])
-        self.yBox = TextBox(yAxes, "yOffset (in)", initial="0")
-        label = self.yBox.ax.get_children()[1] # label is a child of the TextBox axis
-        label.set_position([0.5,1]) # [x,y] - change here to set the position
-        label.set_horizontalalignment('center')
-        label.set_verticalalignment('bottom')
-        self.yBox.on_submit(self.onUpdateYOffset)
+        #yAxes = plt.axes([0.01, 0.7, 0.2, 0.04])
+        #self.yBox = TextBox(yAxes, "yOffset (in)", initial="0")
+        #label = self.yBox.ax.get_children()[1] # label is a child of the TextBox axis
+        #label.set_position([0.5,1]) # [x,y] - change here to set the position
+        #label.set_horizontalalignment('center')
+        #label.set_verticalalignment('bottom')
+        #self.yBox.on_submit(self.onUpdateYOffset)
 
-        rAxes = plt.axes([0.01, 0.6, 0.2, 0.04])
-        self.rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
-        label = self.rBox.ax.get_children()[1] # label is a child of the TextBox axis
-        label.set_position([0.5,1]) # [x,y] - change here to set the position
-        label.set_horizontalalignment('center')
-        label.set_verticalalignment('bottom')
-        self.rBox.on_submit(self.onUpdateRotation)
+        #rAxes = plt.axes([0.01, 0.6, 0.2, 0.04])
+        #self.rBox =  TextBox(rAxes, "rotation (deg)", initial="0")
+        #label = self.rBox.ax.get_children()[1] # label is a child of the TextBox axis
+        #label.set_position([0.5,1]) # [x,y] - change here to set the position
+        #label.set_horizontalalignment('center')
+        #label.set_verticalalignment('bottom')
+        #self.rBox.on_submit(self.onUpdateRotation)
 
         cid = fig.canvas.mpl_connect('button_press_event', self.onclick)
         cid = fig.canvas.mpl_connect('button_release_event', self.onrelease)

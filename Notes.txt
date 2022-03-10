@@ -1,3 +1,25 @@
+######################################
+# Title
+######################################
+CNC routers may be harder to use than 3D printers, can a cut preview help?
+Printers have a print preview, should CNC routers have a cut preview?
+3d printers
+
+######################################
+# Introduction
+######################################
+# What if you could click on this image and have the CNC machine move to
+location you clicked on?
+# What if you could load your GCODE on this image and place it anywhere on
+your machine bed?
+# What if you could rotate it if needed and move cut paths arround to fit on
+the workpiece without re-exporting the GCODE?
+# All this and more has been prototyped and is possible, and I'll show you how
+and demo it in this video.
+
+######################################
+# Motivation
+######################################
 Where is my CNC router going to cut?
   Am I going to run into a clamp?
   Am I cutting on my workpiece?
@@ -7,8 +29,15 @@ Where is my CNC router going to cut?
 each pixel in the view.
   Can draw directly on top of image to do on the spot cutting
   
+######################################
+# Show it cutting
+######################################
+# Show it homing
+# Show it zeroing on the z plate
+# Re show the overlay onto the workpiece
+# Show it cutting
 
-CNC routers may be harder to use than 3D printers, can a cut preview help?
-Printers have a print preview, should CNC routers have a cut preview?
-3d printers
+######################################
+# How it works
+######################################
 
