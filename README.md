@@ -25,7 +25,11 @@ I have 2 children at the moment, so my time is limited, I would love to see some
 * Can draw on top of image to do on the fly cutting
 
 # Desired future features (Possible, just needs work, some are easier than others):
-* Polish this out, put it into actual CNC software
+* Polish this out, put it into existing gCode sender.
+* UI to specify initial measurement of box locations
+* UI to calibrate setup, image to actual location.
+* UI to allow just Z probe, or XYZ probe
+* UI to speicy COM device, gCode file, svf file, etc.
 * Implmenet in different language other than python, as python is not as responsive for this application
 * Live update of where router is within the cut
 * Make UI much better, right not it is very rough

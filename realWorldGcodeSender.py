@@ -1213,9 +1213,9 @@ class GCodeSender:
 
       cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
                                            materialThickness  = materialThickness,
-                                           depthBelowMaterial = 0.1,
-                                           depthPerPass       = 0.157,
-                                           cutFeedRate        = 100,
+                                           depthBelowMaterial = 0.06,
+                                           depthPerPass       = 0.107,
+                                           cutFeedRate        = 79,
                                            safeHeight         = 0.25,
                                            tabHeight          = 0.12,
                                            useMM              = False # use inches
@@ -1256,9 +1256,9 @@ class GCodeSender:
                         )
       cncGcodeGenerator = cncGcodeGeneratorClass(cncPaths           = cncPaths,
                                            materialThickness  = materialThickness,
-                                           depthBelowMaterial = 0.1,
-                                           depthPerPass       = 0.157,
-                                           cutFeedRate        = 100,
+                                           depthBelowMaterial = 0.06,
+                                           depthPerPass       = 0.1,
+                                           cutFeedRate        = 79,
                                            safeHeight         = 1.0,
                                            tabHeight          = 0.12,
                                            useMM              = False # use inches
