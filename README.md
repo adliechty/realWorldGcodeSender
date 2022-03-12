@@ -26,6 +26,7 @@ I have 2 children at the moment, so my time is limited, I would love to see some
 
 # Desired future features (Possible, just needs work, some are easier than others):
 * Polish this out, put it into existing gCode sender.
+* Draw with pencile or marker on wood, auto detect lines, CNC router cuts out.
 * UI to specify initial measurement of box locations
 * UI to calibrate setup, image to actual location.
 * UI to allow just Z probe, or XYZ probe
